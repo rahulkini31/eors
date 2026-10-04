@@ -1,0 +1,21 @@
+# Azure Core & Identity
+azure-identity
+azure-core
+
+# Azure Container Apps
+azure-mgmt-appcontainers
+
+# Azure Event Grid
+azure-eventgrid
+azure-mgmt-eventgrid
+cloudevents
+
+# Microsoft Agent Frameworks
+azure-ai-projects
+semantic-kernel
+autogen-agentchat
+autogen-core
+
+# Async IO & Networking
+aiohttp
+anyio
