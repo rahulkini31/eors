@@ -1,0 +1,524 @@
+{
+  "test_suite_name": "Azure SQL Cross-Database Multi-Agent Evaluation Benchmark",
+  "version": "1.0.0",
+  "description": "Natural language evaluation suite with ground truth SQL queries across ERP (db-01-dev), WMS (db-02-dev), and TMS (db-03-dev) databases on eosr-db-server.database.windows.net.",
+  "target_databases": {
+    "ERP": "db-01-dev",
+    "WMS": "db-02-dev",
+    "TMS": "db-03-dev"
+  },
+  "questions": [
+    {
+      "id": "TC-ERP-01",
+      "category": "Single-Domain ERP",
+      "complexity": "Basic",
+      "question": "What is the total order value and current order status for Acme Corp's purchase order PO-ACM-2026-9921?",
+      "target_database": "db-01-dev",
+      "sql_query": "SELECT o.Order_ID, o.PO_Number, o.OrderStatus, o.Payment_Status, o.Total_Amount FROM dbo.tbl_SalesOrders o WHERE o.PO_Number = 'PO-ACM-2026-9921';",
+      "expected_result": [
+        {
+          "Order_ID": "SO-10045",
+          "PO_Number": "PO-ACM-2026-9921",
+          "OrderStatus": "Completed",
+          "Payment_Status": "Paid",
+          "Total_Amount": "20230.00"
+        }
+      ],
+      "evaluation_criteria": {
+        "key_fields": ["Order_ID", "OrderStatus", "Total_Amount"],
+        "expected_order_id": "SO-10045",
+        "expected_status": "Completed"
+      }
+    },
+    {
+      "id": "TC-ERP-02",
+      "category": "Single-Domain ERP",
+      "complexity": "Basic",
+      "question": "How many enterprise 15-inch laptops are currently on hand in inventory, and what is their total financial asset valuation?",
+      "target_database": "db-01-dev",
+      "sql_query": "SELECT Item_SKU, Item_Description, Qty_On_Hand, Unit_Cost_USD, (Qty_On_Hand * Unit_Cost_USD) AS Total_Asset_Valuation_USD FROM dbo.tbl_Inventory_Master WHERE Item_SKU = 'SKU-LAPTOP-15-ENT';",
+      "expected_result": [
+        {
+          "Item_SKU": "SKU-LAPTOP-15-ENT",
+          "Item_Description": "Enterprise Laptop 15-inch (Intel i7, 32GB RAM, 1TB SSD)",
+          "Qty_On_Hand": 145,
+          "Unit_Cost_USD": "1200.00",
+          "Total_Asset_Valuation_USD": "174000.00"
+        }
+      ],
+      "evaluation_criteria": {
+        "key_fields": ["Qty_On_Hand", "Total_Asset_Valuation_USD"],
+        "expected_qty": 145,
+        "expected_valuation": "174000.00"
+      }
+    },
+    {
+      "id": "TC-ERP-03",
+      "category": "Single-Domain ERP",
+      "complexity": "Medium",
+      "question": "List all customers who hold Enterprise Tier 1 accounts along with their credit limits, ordered from highest to lowest credit limit.",
+      "target_database": "db-01-dev",
+      "sql_query": "SELECT Cust_ID, Cust_Name, Account_Type, Credit_Limit_USD, Payment_Terms FROM dbo.tbl_Customers WHERE Account_Type = 'ENTERPRISE_TIER_1' ORDER BY Credit_Limit_USD DESC;",
+      "expected_result": [
+        {
+          "Cust_ID": "CUST-00202",
+          "Cust_Name": "Globex Corporation",
+          "Account_Type": "ENTERPRISE_TIER_1",
+          "Credit_Limit_USD": "1000000.00",
+          "Payment_Terms": "NET 30"
+        },
+        {
+          "Cust_ID": "CUST-00505",
+          "Cust_Name": "Cyberdyne Systems",
+          "Account_Type": "ENTERPRISE_TIER_1",
+          "Credit_Limit_USD": "750000.00",
+          "Payment_Terms": "NET 30"
+        },
+        {
+          "Cust_ID": "CUST-00101",
+          "Cust_Name": "Acme Corp",
+          "Account_Type": "ENTERPRISE_TIER_1",
+          "Credit_Limit_USD": "500000.00",
+          "Payment_Terms": "NET 30"
+        }
+      ],
+      "evaluation_criteria": {
+        "row_count": 3,
+        "top_customer": "Globex Corporation"
+      }
+    },
+    {
+      "id": "TC-WMS-01",
+      "category": "Single-Domain WMS",
+      "complexity": "Basic",
+      "question": "Which bin location, warehouse zone, and quality lot number contain active stock for Enterprise Laptops (SKU-LAPTOP-15-ENT)?",
+      "target_database": "db-02-dev",
+      "sql_query": "SELECT l.lot_number, l.sku_code, l.qa_status, p.bin_code, b.zone_code, b.shelf_level FROM dbo.inventory_lots l JOIN dbo.outbound_picks p ON l.lot_number = p.lot_number JOIN dbo.bin_locations b ON p.bin_code = b.bin_code WHERE l.sku_code = 'SKU-LAPTOP-15-ENT' GROUP BY l.lot_number, l.sku_code, l.qa_status, p.bin_code, b.zone_code, b.shelf_level;",
+      "expected_result": [
+        {
+          "lot_number": "LOT-2026Q1-TECH",
+          "sku_code": "SKU-LAPTOP-15-ENT",
+          "qa_status": "PASSED",
+          "bin_code": "Z1-A04-S02-B01",
+          "zone_code": "ZONE-TECH-MEZZ",
+          "shelf_level": "B-02"
+        }
+      ],
+      "evaluation_criteria": {
+        "expected_bin": "Z1-A04-S02-B01",
+        "expected_lot": "LOT-2026Q1-TECH"
+      }
+    },
+    {
+      "id": "TC-WMS-02",
+      "category": "Single-Domain WMS",
+      "complexity": "Medium",
+      "question": "What is the physical execution status code, quantity picked, handling unit, and dock door assignment for pick task PK-8801?",
+      "target_database": "db-02-dev",
+      "sql_query": "SELECT p.pick_id, p.status_id, p.qty_picked, p.handling_unit_id, hu.lpn_barcode, hu.hu_type, hu.staged_dock_code, d.assigned_staging_bay FROM dbo.outbound_picks p LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id LEFT JOIN dbo.dock_doors d ON hu.staged_dock_code = d.dock_code WHERE p.pick_id = 'PK-8801';",
+      "expected_result": [
+        {
+          "pick_id": "PK-8801",
+          "status_id": 5,
+          "qty_picked": 10,
+          "handling_unit_id": "HU-8841-PLT",
+          "lpn_barcode": "BC-LPN-8841029",
+          "hu_type": "PALLET",
+          "staged_dock_code": "DOCK-04",
+          "assigned_staging_bay": "STAGE-BAY-NORTH-04"
+        }
+      ],
+      "evaluation_criteria": {
+        "status_code": 5,
+        "handling_unit": "HU-8841-PLT",
+        "dock_door": "DOCK-04"
+      }
+    },
+    {
+      "id": "TC-WMS-03",
+      "category": "Single-Domain WMS",
+      "complexity": "Basic",
+      "question": "List all pallet handling units currently positioned at DOCK-04 and their tare weights.",
+      "target_database": "db-02-dev",
+      "sql_query": "SELECT hu_id, lpn_barcode, hu_type, tare_weight_kg, staged_dock_code FROM dbo.handling_units WHERE staged_dock_code = 'DOCK-04' ORDER BY hu_id;",
+      "expected_result": [
+        {
+          "hu_id": "HU-8841-PLT",
+          "lpn_barcode": "BC-LPN-8841029",
+          "hu_type": "PALLET",
+          "tare_weight_kg": "22.00",
+          "staged_dock_code": "DOCK-04"
+        },
+        {
+          "hu_id": "HU-8843-PLT",
+          "lpn_barcode": "BC-LPN-8843055",
+          "hu_type": "PALLET",
+          "tare_weight_kg": "25.00",
+          "staged_dock_code": "DOCK-04"
+        },
+        {
+          "hu_id": "HU-8845-PLT",
+          "lpn_barcode": "BC-LPN-8845012",
+          "hu_type": "PALLET",
+          "tare_weight_kg": "20.00",
+          "staged_dock_code": "DOCK-04"
+        }
+      ],
+      "evaluation_criteria": {
+        "row_count": 3,
+        "includes_hu": "HU-8841-PLT"
+      }
+    },
+    {
+      "id": "TC-TMS-01",
+      "category": "Single-Domain TMS",
+      "complexity": "Medium",
+      "question": "What carrier name, trailer number, and total load weight are assigned to freight load LD-2026-9041?",
+      "target_database": "db-03-dev",
+      "sql_query": "SELECT fl.Load_ID, fl.Trailer_Number, fl.Load_Status, fl.Total_Pallets, fl.Total_Weight_LBS, cm.Carrier_Name, cm.SCAC_Code, cm.Contact_Phone FROM dbo.Freight_Loads fl JOIN dbo.Carrier_Master cm ON fl.Carrier_ID = cm.Carrier_ID WHERE fl.Load_ID = 'LD-2026-9041';",
+      "expected_result": [
+        {
+          "Load_ID": "LD-2026-9041",
+          "Trailer_Number": "TRL-8821-X",
+          "Load_Status": "DISPATCHED",
+          "Total_Pallets": 4,
+          "Total_Weight_LBS": "3850.00",
+          "Carrier_Name": "Apex Freight Express",
+          "SCAC_Code": "APEX",
+          "Contact_Phone": "+1-800-555-0199"
+        }
+      ],
+      "evaluation_criteria": {
+        "carrier_name": "Apex Freight Express",
+        "trailer_number": "TRL-8821-X",
+        "load_status": "DISPATCHED"
+      }
+    },
+    {
+      "id": "TC-TMS-02",
+      "category": "Single-Domain TMS",
+      "complexity": "Basic",
+      "question": "What is the carrier, tracking number, and current shipment status for Bill of Lading BOL-2026-10045?",
+      "target_database": "db-03-dev",
+      "sql_query": "SELECT Manifest_ID, BOL_Number, Carrier_Name, Tracking_Number, Waybill_Number, Shipment_Status, Dispatched_At, Estimated_Delivery FROM dbo.Carrier_Manifests WHERE BOL_Number = 'BOL-2026-10045';",
+      "expected_result": [
+        {
+          "Manifest_ID": "MNF-2026-8801",
+          "BOL_Number": "BOL-2026-10045",
+          "Carrier_Name": "Apex Freight Express",
+          "Tracking_Number": "TRK-AFX-9948201",
+          "Waybill_Number": "WB-884102",
+          "Shipment_Status": "IN_TRANSIT"
+        }
+      ],
+      "evaluation_criteria": {
+        "tracking_number": "TRK-AFX-9948201",
+        "carrier_name": "Apex Freight Express",
+        "shipment_status": "IN_TRANSIT"
+      }
+    },
+    {
+      "id": "TC-CROSS-01",
+      "category": "Two-Domain Cross-DB (ERP -> WMS)",
+      "complexity": "Advanced",
+      "question": "For customer Acme Corp's laptop order, what is the physical pick task ID, who picked it, and which handling unit was it packed into?",
+      "target_database": "db-01-dev & db-02-dev",
+      "steps": [
+        {
+          "step": 1,
+          "database": "db-01-dev",
+          "description": "Find the ERP Order_ID for customer Acme Corp purchasing Enterprise Laptops",
+          "sql_query": "SELECT o.Order_ID, o.PO_Number, c.Cust_Name, li.Item_SKU FROM dbo.tbl_SalesOrders o JOIN dbo.tbl_Customers c ON o.Cust_ID = c.Cust_ID JOIN dbo.tbl_OrderLineItems li ON o.Order_ID = li.Order_ID WHERE c.Cust_Name = 'Acme Corp' AND li.Item_SKU = 'SKU-LAPTOP-15-ENT';"
+        },
+        {
+          "step": 2,
+          "database": "db-02-dev",
+          "description": "Query the WMS outbound picks using the resolved erp_order_ref 'SO-10045'",
+          "sql_query": "SELECT pick_id, erp_order_ref, sku_code, qty_picked, status_id, picker_badge_id, handling_unit_id, dock_loaded_at FROM dbo.outbound_picks WHERE erp_order_ref = 'SO-10045';"
+        }
+      ],
+      "expected_result": {
+        "erp_order_id": "SO-10045",
+        "pick_id": "PK-8801",
+        "picker_badge_id": "BADGE-304",
+        "handling_unit_id": "HU-8841-PLT",
+        "status_id": 5
+      },
+      "evaluation_criteria": {
+        "pick_id": "PK-8801",
+        "handling_unit_id": "HU-8841-PLT",
+        "status_id": 5
+      }
+    },
+    {
+      "id": "TC-CROSS-02",
+      "category": "Two-Domain Cross-DB (ERP -> WMS)",
+      "complexity": "Advanced",
+      "question": "What is the physical status of Acme Corp's ergonomic chairs order in the warehouse?",
+      "target_database": "db-01-dev & db-02-dev",
+      "steps": [
+        {
+          "step": 1,
+          "database": "db-01-dev",
+          "description": "Resolve the Order ID for Acme Corp's ergonomic chairs order",
+          "sql_query": "SELECT o.Order_ID, li.Item_SKU, o.OrderStatus FROM dbo.tbl_SalesOrders o JOIN dbo.tbl_Customers c ON o.Cust_ID = c.Cust_ID JOIN dbo.tbl_OrderLineItems li ON o.Order_ID = li.Order_ID WHERE c.Cust_Name = 'Acme Corp' AND li.Item_SKU = 'SKU-CHAIR-ERG-01';"
+        },
+        {
+          "step": 2,
+          "database": "db-02-dev",
+          "description": "Query the WMS outbound picks using erp_order_ref 'SO-10046'",
+          "sql_query": "SELECT pick_id, erp_order_ref, status_id, qty_picked, handling_unit_id, bin_code FROM dbo.outbound_picks WHERE erp_order_ref = 'SO-10046';"
+        }
+      ],
+      "expected_result": {
+        "erp_order_id": "SO-10046",
+        "pick_id": "PK-8802",
+        "status_id": 2,
+        "status_meaning": "Picked onto picker cart (Not packed, Not loaded)",
+        "bin_code": "Z2-B12-S01-B04"
+      },
+      "evaluation_criteria": {
+        "status_id": 2,
+        "is_loaded": false
+      }
+    },
+    {
+      "id": "TC-CROSS-03",
+      "category": "Two-Domain Cross-DB (WMS -> TMS)",
+      "complexity": "Advanced",
+      "question": "Which carrier freight load and trailer is handling unit HU-8841-PLT loaded onto, and what is the trailer departure status?",
+      "target_database": "db-02-dev & db-03-dev",
+      "steps": [
+        {
+          "step": 1,
+          "database": "db-02-dev",
+          "description": "Verify handling unit exists and find dock staging assignment",
+          "sql_query": "SELECT hu_id, lpn_barcode, staged_dock_code FROM dbo.handling_units WHERE hu_id = 'HU-8841-PLT';"
+        },
+        {
+          "step": 2,
+          "database": "db-03-dev",
+          "description": "Query TMS Bill of Lading and Freight Loads using Handling_Unit_Ref 'HU-8841-PLT'",
+          "sql_query": "SELECT bol.Handling_Unit_Ref, bol.BOL_Number, fl.Load_ID, fl.Trailer_Number, fl.Load_Status, fl.Departure_Timestamp FROM dbo.Bill_Of_Lading bol JOIN dbo.Freight_Loads fl ON bol.Load_ID = fl.Load_ID WHERE bol.Handling_Unit_Ref = 'HU-8841-PLT';"
+        }
+      ],
+      "expected_result": {
+        "handling_unit": "HU-8841-PLT",
+        "bol_number": "BOL-2026-10045",
+        "load_id": "LD-2026-9041",
+        "trailer_number": "TRL-8821-X",
+        "load_status": "DISPATCHED"
+      },
+      "evaluation_criteria": {
+        "load_id": "LD-2026-9041",
+        "trailer_number": "TRL-8821-X",
+        "load_status": "DISPATCHED"
+      }
+    },
+    {
+      "id": "TC-CORE-01",
+      "category": "Three-Domain Full Synthesis (ERP -> WMS -> TMS)",
+      "complexity": "Expert (Core Agentic Challenge)",
+      "question": "Has customer Acme Corp's laptop order shipped, and if so, what is the carrier and tracking number?",
+      "target_database": "db-01-dev -> db-02-dev -> db-03-dev",
+      "steps": [
+        {
+          "step": 1,
+          "database": "db-01-dev",
+          "description": "Find Sales Order ID and PO Number for customer 'Acme Corp' and product 'laptop'",
+          "sql_query": "SELECT o.Order_ID, o.PO_Number, c.Cust_Name, li.Item_SKU, o.OrderStatus FROM dbo.tbl_SalesOrders o JOIN dbo.tbl_Customers c ON o.Cust_ID = c.Cust_ID JOIN dbo.tbl_OrderLineItems li ON o.Order_ID = li.Order_ID WHERE c.Cust_Name = 'Acme Corp' AND li.Item_SKU LIKE '%LAPTOP%';"
+        },
+        {
+          "step": 2,
+          "database": "db-02-dev",
+          "description": "Find the physical pick record and handling unit container for the resolved order 'SO-10045'",
+          "sql_query": "SELECT pick_id, erp_order_ref, status_id, handling_unit_id, dock_loaded_at FROM dbo.outbound_picks WHERE erp_order_ref = 'SO-10045';"
+        },
+        {
+          "step": 3,
+          "database": "db-03-dev",
+          "description": "Find the carrier manifest and tracking number for handling unit 'HU-8841-PLT'",
+          "sql_query": "SELECT cm.Manifest_ID, cm.Carrier_Name, cm.Tracking_Number, cm.Waybill_Number, cm.Shipment_Status, cm.Dispatched_At, cm.Estimated_Delivery FROM dbo.Carrier_Manifests cm WHERE cm.Handling_Unit_Ref = 'HU-8841-PLT';"
+        }
+      ],
+      "expected_result": {
+        "shipped": true,
+        "carrier_name": "Apex Freight Express",
+        "tracking_number": "TRK-AFX-9948201",
+        "waybill_number": "WB-884102",
+        "shipment_status": "IN_TRANSIT",
+        "handling_unit": "HU-8841-PLT",
+        "erp_order_id": "SO-10045",
+        "conclusion": "Yes, customer Acme Corp's laptop order (SO-10045) has shipped. It was packed into handling unit HU-8841-PLT, loaded at Dock 4, and dispatched via Apex Freight Express under tracking number TRK-AFX-9948201 with status IN_TRANSIT."
+      },
+      "evaluation_criteria": {
+        "shipped_boolean": true,
+        "carrier": "Apex Freight Express",
+        "tracking_number": "TRK-AFX-9948201",
+        "status": "IN_TRANSIT"
+      }
+    },
+    {
+      "id": "TC-CORE-02",
+      "category": "Three-Domain Full Synthesis (ERP -> WMS -> TMS)",
+      "complexity": "Expert",
+      "question": "What is the complete end-to-end audit trail (from financial order, to warehouse staging, to freight tracking) for customer purchase order PO-ACM-2026-9921?",
+      "target_database": "db-01-dev -> db-02-dev -> db-03-dev",
+      "steps": [
+        {
+          "step": 1,
+          "database": "db-01-dev",
+          "description": "Retrieve financial order header and totals by customer PO",
+          "sql_query": "SELECT Order_ID, PO_Number, OrderStatus, Total_Amount, Order_Date FROM dbo.tbl_SalesOrders WHERE PO_Number = 'PO-ACM-2026-9921';"
+        },
+        {
+          "step": 2,
+          "database": "db-02-dev",
+          "description": "Retrieve warehouse pick execution and handling unit",
+          "sql_query": "SELECT pick_id, erp_order_ref, customer_po_ref, status_id, handling_unit_id, dock_loaded_at FROM dbo.outbound_picks WHERE customer_po_ref = 'PO-ACM-2026-9921';"
+        },
+        {
+          "step": 3,
+          "database": "db-03-dev",
+          "description": "Retrieve freight bill of lading and manifest using handling unit ref",
+          "sql_query": "SELECT cm.BOL_Number, cm.Carrier_Name, cm.Tracking_Number, cm.Gross_Weight_LBS, cm.Shipment_Status, cm.Estimated_Delivery FROM dbo.Carrier_Manifests cm JOIN dbo.Bill_Of_Lading bol ON cm.BOL_Number = bol.BOL_Number WHERE bol.Handling_Unit_Ref = 'HU-8841-PLT';"
+        }
+      ],
+      "expected_result": {
+        "erp_order": {
+          "Order_ID": "SO-10045",
+          "PO_Number": "PO-ACM-2026-9921",
+          "Total_Amount": "20230.00",
+          "OrderStatus": "Completed"
+        },
+        "wms_pick": {
+          "pick_id": "PK-8801",
+          "status_id": 5,
+          "handling_unit_id": "HU-8841-PLT"
+        },
+        "tms_manifest": {
+          "BOL_Number": "BOL-2026-10045",
+          "Carrier_Name": "Apex Freight Express",
+          "Tracking_Number": "TRK-AFX-9948201",
+          "Shipment_Status": "IN_TRANSIT"
+        }
+      },
+      "evaluation_criteria": {
+        "all_stages_resolved": true,
+        "lineage": "SO-10045 -> HU-8841-PLT -> TRK-AFX-9948201"
+      }
+    },
+    {
+      "id": "TC-DISTRACTOR-01",
+      "category": "Distractor & Adversarial",
+      "complexity": "Hard (Negative Test)",
+      "question": "Did Acme Corp order SO-10012 ever get picked or loaded onto a delivery truck?",
+      "target_database": "db-01-dev & db-02-dev",
+      "steps": [
+        {
+          "step": 1,
+          "database": "db-01-dev",
+          "description": "Check order status in ERP",
+          "sql_query": "SELECT Order_ID, Cust_ID, OrderStatus, Payment_Status, Internal_Notes FROM dbo.tbl_SalesOrders WHERE Order_ID = 'SO-10012';"
+        },
+        {
+          "step": 2,
+          "database": "db-02-dev",
+          "description": "Attempt to find pick task in WMS for cancelled order",
+          "sql_query": "SELECT pick_id, erp_order_ref, status_id FROM dbo.outbound_picks WHERE erp_order_ref = 'SO-10012';"
+        }
+      ],
+      "expected_result": {
+        "erp_status": "Cancelled",
+        "wms_pick_count": 0,
+        "was_picked": false,
+        "conclusion": "No. Order SO-10012 was cancelled and refunded in the ERP prior to fulfillment. No pick task was generated in the WMS."
+      },
+      "evaluation_criteria": {
+        "was_picked": false,
+        "is_cancelled": true
+      }
+    },
+    {
+      "id": "TC-DISTRACTOR-02",
+      "category": "Distractor & Adversarial",
+      "complexity": "Hard (Customer Disambiguation)",
+      "question": "Has Globex Corporation's laptop order shipped, and which carrier handled it?",
+      "target_database": "db-01-dev -> db-02-dev -> db-03-dev",
+      "steps": [
+        {
+          "step": 1,
+          "database": "db-01-dev",
+          "description": "Find Order ID for Globex Corporation purchasing laptops",
+          "sql_query": "SELECT o.Order_ID, c.Cust_Name, li.Item_SKU FROM dbo.tbl_SalesOrders o JOIN dbo.tbl_Customers c ON o.Cust_ID = c.Cust_ID JOIN dbo.tbl_OrderLineItems li ON o.Order_ID = li.Order_ID WHERE c.Cust_Name LIKE '%Globex%' AND li.Item_SKU = 'SKU-LAPTOP-15-ENT';"
+        },
+        {
+          "step": 2,
+          "database": "db-02-dev",
+          "description": "Find handling unit for Globex order SO-10047",
+          "sql_query": "SELECT pick_id, erp_order_ref, handling_unit_id, status_id FROM dbo.outbound_picks WHERE erp_order_ref = 'SO-10047';"
+        },
+        {
+          "step": 3,
+          "database": "db-03-dev",
+          "description": "Find carrier and tracking for Globex handling unit HU-8843-PLT",
+          "sql_query": "SELECT Carrier_Name, Tracking_Number, Shipment_Status FROM dbo.Carrier_Manifests WHERE Handling_Unit_Ref = 'HU-8843-PLT';"
+        }
+      ],
+      "expected_result": {
+        "customer": "Globex Corporation",
+        "erp_order": "SO-10047",
+        "handling_unit": "HU-8843-PLT",
+        "carrier_name": "Swift Global Logistics",
+        "tracking_number": "TRK-SW-7719283",
+        "shipment_status": "DELIVERED",
+        "conclusion": "Yes. Globex Corporation's laptop order (SO-10047) was dispatched via Swift Global Logistics under tracking number TRK-SW-7719283 and has already been delivered."
+      },
+      "evaluation_criteria": {
+        "carrier_name": "Swift Global Logistics",
+        "tracking_number": "TRK-SW-7719283",
+        "must_not_be": "Apex Freight Express"
+      }
+    },
+    {
+      "id": "TC-DISTRACTOR-03",
+      "category": "Distractor & Adversarial",
+      "complexity": "Hard (Staged vs Shipped Trap)",
+      "question": "Is Acme Corp's branch office expedited order (PO-ACM-2026-9930) currently on a delivery truck?",
+      "target_database": "db-01-dev -> db-02-dev -> db-03-dev",
+      "steps": [
+        {
+          "step": 1,
+          "database": "db-01-dev",
+          "description": "Find Order ID for PO-ACM-2026-9930",
+          "sql_query": "SELECT Order_ID, PO_Number, OrderStatus FROM dbo.tbl_SalesOrders WHERE PO_Number = 'PO-ACM-2026-9930';"
+        },
+        {
+          "step": 2,
+          "database": "db-02-dev",
+          "description": "Check WMS status code for SO-10048",
+          "sql_query": "SELECT pick_id, erp_order_ref, status_id, handling_unit_id FROM dbo.outbound_picks WHERE erp_order_ref = 'SO-10048';"
+        },
+        {
+          "step": 3,
+          "database": "db-03-dev",
+          "description": "Check TMS manifest status for HU-8844-PLT",
+          "sql_query": "SELECT Carrier_Name, Tracking_Number, Shipment_Status, Dispatched_At FROM dbo.Carrier_Manifests WHERE Handling_Unit_Ref = 'HU-8844-PLT';"
+        }
+      ],
+      "expected_result": {
+        "order_id": "SO-10048",
+        "status_id": 4,
+        "status_description": "Staged at Dock 7",
+        "shipment_status": "PENDING_PICKUP",
+        "on_delivery_truck": false,
+        "conclusion": "No, it is not currently on a delivery truck. It is staged at Dock 7 (WMS status_id = 4) and marked PENDING_PICKUP in the TMS by FedEx Freight Regional, awaiting carrier trailer arrival."
+      },
+      "evaluation_criteria": {
+        "on_delivery_truck": false,
+        "wms_status_id": 4,
+        "tms_status": "PENDING_PICKUP"
+      }
+    }
+  ]
+}
