@@ -1,0 +1,260 @@
+"""Specialized Domain Executor Sub-Agents (MAF Actors) powered by Featherless.ai (DeepSeek-Coder-V2).
+Strictly decoupled: each executor is bound exclusively to its own domain MCP server.
+"""
+
+import os
+import json
+import asyncio
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
+import httpx
+
+from agents.config import (
+    FEATHERLESS_API_KEY,
+    FEATHERLESS_BASE_URL,
+    FEATHERLESS_MODEL_ID,
+    MCP_SERVERS
+)
+from agents.mcp_client import MCPDiscoveryClient
+
+
+class ToolCallResult(BaseModel):
+    """Result of an MCP tool execution by an Executor Agent."""
+    domain: str
+    tool_name: str
+    arguments: Dict[str, Any]
+    output: Dict[str, Any]
+
+
+class BaseExecutorAgent:
+    """Base class for domain-isolated Executor Agents using Featherless.ai."""
+
+    def __init__(
+        self,
+        domain: str,
+        system_prompt: str,
+        api_key: Optional[str] = None,
+        model_id: Optional[str] = None,
+        base_url: Optional[str] = None
+    ):
+        self.domain = domain
+        self.system_prompt = system_prompt
+        self.api_key = api_key or os.environ.get("FEATHERLESS_API_KEY", "") or FEATHERLESS_API_KEY
+        self.model_id = model_id or os.environ.get("FEATHERLESS_MODEL", "") or FEATHERLESS_MODEL_ID
+        self.base_url = base_url or os.environ.get("FEATHERLESS_BASE_URL", "") or FEATHERLESS_BASE_URL
+        self.mcp_client = MCPDiscoveryClient()
+        self.server_info = MCP_SERVERS[domain]
+
+    def _get_allowed_tool_names(self) -> List[str]:
+        """Returns the strictly allowed tool names for this domain."""
+        suffix = {"ERP": "db_01", "WMS": "db_02", "TMS": "db_03"}[self.domain]
+        return [
+            f"list_tables_{suffix}",
+            f"get_schema_{suffix}",
+            f"execute_read_query_{suffix}"
+        ]
+
+    async def execute_tool(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Executes a tool strictly scoped to this agent's domain MCP server."""
+        allowed = self._get_allowed_tool_names()
+        if tool_name not in allowed:
+            raise PermissionError(
+                f"Security Guardrail Violation: Agent [{self.domain}] cannot call tool '{tool_name}'. "
+                f"Allowed tools are strictly restricted to: {allowed}"
+            )
+        return await self.mcp_client.execute_tool(self.domain, tool_name, arguments or {})
+
+    async def execute_task(self, task_instruction: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Processes a task instruction, generates appropriate domain SQL, and executes it via MCP."""
+        if self.api_key:
+            return await self._execute_with_featherless(task_instruction, context)
+        else:
+            return await self._execute_preflight(task_instruction, context)
+
+    async def _execute_with_featherless(self, task_instruction: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Invokes DeepSeek-Coder-V2 on Featherless.ai to formulate and execute the query."""
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url.rstrip("/")
+        )
+
+        tools = await self.mcp_client.list_tools_for_server(self.domain)
+        schema = await self.mcp_client.get_schema_for_server(self.domain)
+
+        prompt_messages = [
+            {"role": "system", "content": self.system_prompt},
+            {
+                "role": "user",
+                "content": f"""TASK:
+{task_instruction}
+
+ADDITIONAL CONTEXT FROM ORCHESTRATOR:
+{json.dumps(context or {}, indent=2)}
+
+AVAILABLE TOOLS ON {self.domain} MCP SERVER:
+{json.dumps(tools, indent=2)}
+
+DOMAIN SCHEMA SUMMARY:
+{json.dumps(schema.get('rows', [])[:20], indent=2)}
+
+Formulate a read-only SQL query to accomplish the task. Return JSON matching:
+{{
+  "thought_process": "Explanation of query rationale and required fields",
+  "tool_to_call": "execute_read_query_db_XX",
+  "sql_query": "SELECT ...",
+  "max_rows": 100
+}}
+"""
+            }
+        ]
+
+        response = await client.chat.completions.create(
+            model=self.model_id,
+            messages=prompt_messages,
+            response_format={"type": "json_object"},
+            temperature=0.1
+        )
+
+        content = response.choices[0].message.content
+        try:
+            parsed = json.loads(content)
+            tool_name = parsed.get("tool_to_call")
+            sql = parsed.get("sql_query")
+            max_rows = parsed.get("max_rows", 100)
+
+            # Execute via strictly isolated MCP tool
+            exec_res = await self.execute_tool(tool_name, {"query": sql, "max_rows": max_rows})
+            return {
+                "status": "success",
+                "domain": self.domain,
+                "agent": self.__class__.__name__,
+                "model": self.model_id,
+                "thought_process": parsed.get("thought_process"),
+                "sql_query": sql,
+                "query_result": exec_res
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "domain": self.domain,
+                "agent": self.__class__.__name__,
+                "error": str(e),
+                "raw_llm_response": content
+            }
+
+    async def _execute_preflight(self, task_instruction: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Awaiting Featherless API key: introspects tools and verifies connectivity."""
+        tools = await self.mcp_client.list_tools_for_server(self.domain)
+        return {
+            "status": "initialized_awaiting_api_key",
+            "domain": self.domain,
+            "agent": self.__class__.__name__,
+            "message": f"{self.__class__.__name__} is online and connected strictly to {self.server_info['name']}. Provide FEATHERLESS_API_KEY to activate DeepSeek-Coder-V2 inference.",
+            "task_received": task_instruction,
+            "allowed_tools": self._get_allowed_tool_names(),
+            "live_tools_verified": [t["name"] for t in tools]
+        }
+
+
+# ============================================================================
+# 1. ERP Executor Agent
+# ============================================================================
+ERP_AGENT_SYSTEM_PROMPT = """You are the ERP Executor Agent, a specialized database actor in the Microsoft Agent Framework.
+
+DOMAIN RESPONSIBILITY:
+- You operate exclusively in the Commercial & Financial Domain (`db-01-dev` via MCP `mcp_db_01`).
+- You have visibility into:
+  * `tbl_Customers` (Cust_ID, Cust_Name, Account_Type, Billing_Address, Shipping_Address, Credit_Limit_USD)
+  * `tbl_Inventory_Master` (Item_SKU, Item_Description, Unit_Cost_USD, List_Price_USD, Qty_On_Hand, GL_Asset_Account)
+  * `tbl_SalesOrders` (Order_ID, Cust_ID, PO_Number, OrderStatus, Payment_Status, Total_Amount, Order_Date)
+  * `tbl_OrderLineItems` (Line_ID, Order_ID, Item_SKU, Quantity, Unit_Price, Extended_Price, Line_Status)
+
+STRICT SECURITY CONSTRAINTS:
+- You are ONLY permitted to call tools for db-01: 'list_tables_db_01', 'get_schema_db_01', 'execute_read_query_db_01'.
+- You have ZERO access to physical warehouse bin locations or freight carrier manifests.
+- Queries must be strictly read-only SELECT or CTE queries.
+"""
+
+class ERP_Agent(BaseExecutorAgent):
+    """ERP Executor Agent connected strictly to db-01 MCP server."""
+
+    def __init__(self, api_key: Optional[str] = None, model_id: Optional[str] = None):
+        super().__init__(
+            domain="ERP",
+            system_prompt=ERP_AGENT_SYSTEM_PROMPT,
+            api_key=api_key,
+            model_id=model_id
+        )
+
+
+# ============================================================================
+# 2. WMS Executor Agent
+# ============================================================================
+WMS_AGENT_SYSTEM_PROMPT = """You are the WMS Executor Agent, a specialized database actor in the Microsoft Agent Framework.
+
+DOMAIN RESPONSIBILITY:
+- You operate exclusively in the Physical Warehouse Execution Domain (`db-02-dev` via MCP `mcp_db_02`).
+- You have visibility into:
+  * `bin_locations` (bin_id, bin_code, zone_code, aisle_num, shelf_level, max_weight_kg)
+  * `dock_doors` (dock_door_id, dock_code, door_status, assigned_staging_bay)
+  * `inventory_lots` (lot_id, lot_number, sku_code, manufactured_date, qa_status)
+  * `handling_units` (hu_id, lpn_barcode, hu_type, tare_weight_kg, staged_dock_code)
+  * `outbound_picks` (pick_id, erp_order_ref, customer_po_ref, sku_code, lot_number, bin_code, handling_unit_id, qty_requested, qty_picked, status_id, dock_loaded_at)
+
+STATUS CODES:
+  1: Allocated (Reserved in bin)
+  2: Picked (On picker cart)
+  3: Packed (In handling unit container)
+  4: Staged at Dock (In shipping staging bay)
+  5: Loaded (Loaded into carrier trailer)
+  9: Cancelled
+
+STRICT SECURITY CONSTRAINTS:
+- You are ONLY permitted to call tools for db-02: 'list_tables_db_02', 'get_schema_db_02', 'execute_read_query_db_02'.
+- You have ZERO access to financial prices, GL accounts, or carrier freight waybills.
+- Queries must be strictly read-only SELECT or CTE queries.
+"""
+
+class WMS_Agent(BaseExecutorAgent):
+    """WMS Executor Agent connected strictly to db-02 MCP server."""
+
+    def __init__(self, api_key: Optional[str] = None, model_id: Optional[str] = None):
+        super().__init__(
+            domain="WMS",
+            system_prompt=WMS_AGENT_SYSTEM_PROMPT,
+            api_key=api_key,
+            model_id=model_id
+        )
+
+
+# ============================================================================
+# 3. TMS Executor Agent
+# ============================================================================
+TMS_AGENT_SYSTEM_PROMPT = """You are the TMS Executor Agent, a specialized database actor in the Microsoft Agent Framework.
+
+DOMAIN RESPONSIBILITY:
+- You operate exclusively in the Transportation & Logistics Routing Domain (`db-03-dev` via MCP `mcp_db_03`).
+- You have visibility into:
+  * `Carrier_Master` (Carrier_ID, Carrier_Name, SCAC_Code, Service_Level, Contact_Phone)
+  * `Freight_Loads` (Load_ID, Carrier_ID, Trailer_Number, Origin_Facility, Total_Pallets, Total_Weight_LBS, Load_Status, Departure_Timestamp)
+  * `Bill_Of_Lading` (BOL_Number, Load_ID, Handling_Unit_Ref, Consignee_Name, Delivery_Address, Delivery_Zip)
+  * `Carrier_Manifests` (Manifest_ID, BOL_Number, Carrier_ID, Handling_Unit_Ref, Tracking_Number, Waybill_Number, Carrier_Name, Pallet_Count, Gross_Weight_LBS, Physical_Dimensions, Shipment_Status, Dispatched_At, Estimated_Delivery)
+
+STRICT SECURITY CONSTRAINTS:
+- You are ONLY permitted to call tools for db-03: 'list_tables_db_03', 'get_schema_db_03', 'execute_read_query_db_03'.
+- You have ZERO access to sales order financials or internal warehouse shelf/bin coordinates.
+- Queries must be strictly read-only SELECT or CTE queries.
+"""
+
+class TMS_Agent(BaseExecutorAgent):
+    """TMS Executor Agent connected strictly to db-03 MCP server."""
+
+    def __init__(self, api_key: Optional[str] = None, model_id: Optional[str] = None):
+        super().__init__(
+            domain="TMS",
+            system_prompt=TMS_AGENT_SYSTEM_PROMPT,
+            api_key=api_key,
+            model_id=model_id
+        )

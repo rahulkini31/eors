@@ -1,4 +1,4 @@
-"""Configuration settings for the Multi-Agent Framework and MCP Servers."""
+"""Configuration settings for the Multi-Agent Framework, MCP Servers, and Model Providers."""
 
 import os
 from typing import Dict
@@ -37,6 +37,14 @@ MCP_SERVERS: Dict[str, Dict[str, str]] = {
     }
 }
 
-# Google Gemini Model Configuration
+# Google Gemini Configuration (Primary Planner / Strategic Orchestrator)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
 GEMINI_MODEL_ID = os.environ.get("GEMINI_MODEL_ID", "gemini-2.5-flash")
+
+# Featherless.ai Configuration (Executors / DeepSeek-Coder-V2)
+FEATHERLESS_API_KEY = os.environ.get("FEATHERLESS_API_KEY", "")
+FEATHERLESS_BASE_URL = os.environ.get("FEATHERLESS_BASE_URL", "https://api.featherless.ai/v1")
+FEATHERLESS_MODEL_ID = os.environ.get(
+    "FEATHERLESS_MODEL",
+    "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
+)
