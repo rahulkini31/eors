@@ -31,6 +31,7 @@ from agents.telemetry import (
     inject_trace_context,
     extract_trace_context
 )
+from agents.event_streamer import AgentEventStreamer
 
 # Acquire module-level OpenTelemetry tracer
 tracer = get_tracer("maf.actors")
@@ -66,6 +67,12 @@ class ERPActor(RoutedAgent):
             span.set_attribute("correlation.id", message.correlation_id)
 
             print(f"\n📨 [ERPActor] Received message from '{ctx.sender}': lookup for customer '{message.customer_query}' and item '{message.item_query}'")
+            await AgentEventStreamer.emit(
+                "agent_start",
+                "ERP_Agent",
+                f"Analyzing financial records for customer '{message.customer_query}' and item '{message.item_query}'...",
+                database="db-01-dev"
+            )
             
             sql_query = f"""
             SELECT 
@@ -93,6 +100,13 @@ class ERPActor(RoutedAgent):
             with tracer.start_as_current_span("mcp_tool_execute_read_query_db_01") as tool_span:
                 tool_span.set_attribute("mcp.server", "mcp_db_01")
                 tool_span.set_attribute("db.statement", sql_query.strip())
+                await AgentEventStreamer.emit(
+                    "tool_call",
+                    "ERP_Agent",
+                    "Executing read query on db-01-dev via mcp_db_01",
+                    {"tool": "execute_read_query_db_01", "sql": sql_query.strip()},
+                    database="db-01-dev"
+                )
                 try:
                     res = await self.mcp_client.execute_tool("ERP", "execute_read_query_db_01", {"query": sql_query})
                     rows = res.get("rows", [])
@@ -106,6 +120,13 @@ class ERPActor(RoutedAgent):
 
             if not rows:
                 span.set_attribute("erp.match_found", False)
+                await AgentEventStreamer.emit(
+                    "tool_result",
+                    "ERP_Agent",
+                    f"No matching sales order found in ERP for customer '{message.customer_query}'.",
+                    {"matched": False},
+                    database="db-01-dev"
+                )
                 return ERPOrderLookupResponse(
                     order_id="", po_number="", customer_name=message.customer_query,
                     item_sku="", quantity=0, order_status="NOT_FOUND", payment_status="",
@@ -121,6 +142,19 @@ class ERPActor(RoutedAgent):
             span.set_attribute("erp.po_number", match.get("PO_Number", ""))
 
             print(f"  -> [ERPActor] Found active Order '{match['Order_ID']}' (PO: '{match['PO_Number']}', Status: '{match['OrderStatus']}')")
+            await AgentEventStreamer.emit(
+                "tool_result",
+                "ERP_Agent",
+                f"Resolved Order {match['Order_ID']} (PO: {match.get('PO_Number', 'N/A')}, Status: {match['OrderStatus']})",
+                {
+                    "order_id": match["Order_ID"],
+                    "po_number": match.get("PO_Number", ""),
+                    "status": match["OrderStatus"],
+                    "customer": match["Cust_Name"],
+                    "item_sku": match.get("Item_SKU", "")
+                },
+                database="db-01-dev"
+            )
             return ERPOrderLookupResponse(
                 order_id=match["Order_ID"],
                 po_number=match.get("PO_Number", ""),
@@ -165,6 +199,12 @@ class WMSActor(RoutedAgent):
 
             print(f"\n📨 [WMSActor] Received message from '{ctx.sender}': \"{message.prompt_question}\"")
             print(f"  -> [WMSActor] Evaluating schema: joining against erp_order_ref = '{message.erp_order_ref}'")
+            await AgentEventStreamer.emit(
+                "agent_start",
+                "WMS_Agent",
+                f"Querying warehouse execution for ERP reference '{message.erp_order_ref}'...",
+                database="db-02-dev"
+            )
 
             sql_query = f"""
             SELECT 
@@ -191,6 +231,13 @@ class WMSActor(RoutedAgent):
             with tracer.start_as_current_span("mcp_tool_execute_read_query_db_02") as tool_span:
                 tool_span.set_attribute("mcp.server", "mcp_db_02")
                 tool_span.set_attribute("db.statement", sql_query.strip())
+                await AgentEventStreamer.emit(
+                    "tool_call",
+                    "WMS_Agent",
+                    "Executing read query on db-02-dev via mcp_db_02",
+                    {"tool": "execute_read_query_db_02", "sql": sql_query.strip()},
+                    database="db-02-dev"
+                )
                 try:
                     res = await self.mcp_client.execute_tool("WMS", "execute_read_query_db_02", {"query": sql_query})
                     rows = res.get("rows", [])
@@ -205,6 +252,13 @@ class WMSActor(RoutedAgent):
             if not rows:
                 span.set_attribute("wms.match_found", False)
                 print(f"  -> [WMSActor] No outbound pick found for order ref '{message.erp_order_ref}'.")
+                await AgentEventStreamer.emit(
+                    "tool_result",
+                    "WMS_Agent",
+                    f"No physical pick record found for ERP order '{message.erp_order_ref}'.",
+                    {"matched": False},
+                    database="db-02-dev"
+                )
                 return WMSExecutionLookupResponse(
                     pick_id="", handling_unit_id="", status_id=0,
                     status_description="No pick record found in WMS",
@@ -231,7 +285,19 @@ class WMSActor(RoutedAgent):
             span.set_attribute("wms.status_id", match["status_id"])
 
             print(f"  -> [WMSActor] Confirmed Pick '{match['pick_id']}', Handling Unit '{match['handling_unit_id']}', status_id = {match['status_id']} ({status_desc})")
-
+            await AgentEventStreamer.emit(
+                "tool_result",
+                "WMS_Agent",
+                f"Resolved Physical Pick {match['pick_id']} -> Handling Unit {match['handling_unit_id']} (Status: {status_desc})",
+                {
+                    "pick_id": match["pick_id"],
+                    "handling_unit_id": match["handling_unit_id"],
+                    "status_id": match["status_id"],
+                    "status_description": status_desc,
+                    "dock_code": match.get("staged_dock_code")
+                },
+                database="db-02-dev"
+            )
             return WMSExecutionLookupResponse(
                 pick_id=match["pick_id"],
                 handling_unit_id=match["handling_unit_id"],
@@ -274,6 +340,12 @@ class TMSActor(RoutedAgent):
 
             print(f"\n📨 [TMSActor] Received message from '{ctx.sender}': \"{message.prompt_question}\"")
             print(f"  -> [TMSActor] Querying Carrier_Manifests by Handling_Unit_Ref = '{message.handling_unit_ref}'")
+            await AgentEventStreamer.emit(
+                "agent_start",
+                "TMS_Agent",
+                f"Querying freight manifests and routing for Handling Unit '{message.handling_unit_ref}'...",
+                database="db-03-dev"
+            )
 
             sql_query = f"""
             SELECT 
@@ -297,6 +369,13 @@ class TMSActor(RoutedAgent):
             with tracer.start_as_current_span("mcp_tool_execute_read_query_db_03") as tool_span:
                 tool_span.set_attribute("mcp.server", "mcp_db_03")
                 tool_span.set_attribute("db.statement", sql_query.strip())
+                await AgentEventStreamer.emit(
+                    "tool_call",
+                    "TMS_Agent",
+                    "Executing read query on db-03-dev via mcp_db_03",
+                    {"tool": "execute_read_query_db_03", "sql": sql_query.strip()},
+                    database="db-03-dev"
+                )
                 try:
                     res = await self.mcp_client.execute_tool("TMS", "execute_read_query_db_03", {"query": sql_query})
                     rows = res.get("rows", [])
@@ -311,6 +390,13 @@ class TMSActor(RoutedAgent):
             if not rows:
                 span.set_attribute("tms.match_found", False)
                 print(f"  -> [TMSActor] No manifest found for HU '{message.handling_unit_ref}'.")
+                await AgentEventStreamer.emit(
+                    "tool_result",
+                    "TMS_Agent",
+                    f"No freight manifest found for Handling Unit '{message.handling_unit_ref}'.",
+                    {"matched": False},
+                    database="db-03-dev"
+                )
                 return TMSDispatchLookupResponse(
                     manifest_id="", carrier_name="", tracking_number="", waybill_number="",
                     shipment_status="NOT_MANIFESTED", dispatched_at=None, estimated_delivery=None,
@@ -326,6 +412,19 @@ class TMSActor(RoutedAgent):
             span.set_attribute("tms.shipment_status", match["Shipment_Status"])
 
             print(f"  -> [TMSActor] Resolved Carrier '{match['Carrier_Name']}', Tracking '{match['Tracking_Number']}', Status '{match['Shipment_Status']}'")
+            await AgentEventStreamer.emit(
+                "tool_result",
+                "TMS_Agent",
+                f"Resolved Carrier {match['Carrier_Name']} -> Tracking #{match['Tracking_Number']} (Status: {match['Shipment_Status']})",
+                {
+                    "carrier": match["Carrier_Name"],
+                    "tracking_number": match["Tracking_Number"],
+                    "waybill": match.get("Waybill_Number", ""),
+                    "status": match["Shipment_Status"],
+                    "manifest_id": match["Manifest_ID"]
+                },
+                database="db-03-dev"
+            )
             return TMSDispatchLookupResponse(
                 manifest_id=match["Manifest_ID"],
                 carrier_name=match["Carrier_Name"],
@@ -383,15 +482,32 @@ class GeminiPlannerActor(RoutedAgent):
             # Step 0: Dynamic Discovery Span
             with tracer.start_as_current_span("planner_dynamic_discovery") as disc_span:
                 print("\n[Step 0: Dynamic Discovery] Introspecting ERP, WMS, and TMS architectures...")
+                await AgentEventStreamer.emit(
+                    "discovery_start",
+                    "GeminiPlanner",
+                    "Pinging MCP servers to dynamically read ERP, WMS, and TMS schemas without hardcoding..."
+                )
                 architectures = await self.mcp_client.discover_all_architectures()
                 pings = await self.mcp_client.ping_all_servers()
                 disc_span.set_attribute("discovered.server_count", len(architectures))
                 for domain, arch in architectures.items():
                     print(f"  • {domain} ({arch['server_name']}): {len(arch['available_tools'])} tools, {len(arch['database_schema'].get('rows', []))} columns [Status: {pings.get(domain, {}).get('status')}]")
+                await AgentEventStreamer.emit(
+                    "discovery_done",
+                    "GeminiPlanner",
+                    f"Dynamic discovery complete: introspected {len(architectures)} decoupled domain architectures.",
+                    {"domains": list(architectures.keys())}
+                )
 
             # Step 1: Send message to ERP_Agent with W3C Trace Context
             erp_agent_id = AgentId("ERP_Agent", "default")
             print(f"\n[Step 1: A2A Message Passing] Sending ERPOrderLookupRequest to '{erp_agent_id}'...")
+            await AgentEventStreamer.emit(
+                "agent_dispatch",
+                "GeminiPlanner",
+                "Dispatching ERPOrderLookupRequest to ERP_Agent via MAF asynchronous message bus...",
+                {"target": str(erp_agent_id), "prompt": message.query}
+            )
             
             erp_req = ERPOrderLookupRequest(
                 customer_query="Acme",
@@ -432,6 +548,12 @@ class GeminiPlannerActor(RoutedAgent):
             wms_prompt = f"I have an ERP order reference '{erp_resp.order_id}'. Do you have physical execution data for this?"
             print(f"\n[Step 2: A2A Message Passing] Sending WMSExecutionLookupRequest to '{wms_agent_id}'...")
             print(f"  Message Body: \"{wms_prompt}\"")
+            await AgentEventStreamer.emit(
+                "agent_dispatch",
+                "GeminiPlanner",
+                f"Dispatching WMSExecutionLookupRequest to WMS_Agent with ERP reference '{erp_resp.order_id}'...",
+                {"target": str(wms_agent_id), "erp_order_ref": erp_resp.order_id}
+            )
 
             wms_req = WMSExecutionLookupRequest(
                 erp_order_ref=erp_resp.order_id,
@@ -472,6 +594,12 @@ class GeminiPlannerActor(RoutedAgent):
             tms_prompt = f"I have Handling Unit ID '{wms_resp.handling_unit_id}'. Do you have carrier dispatch and tracking information?"
             print(f"\n[Step 3: A2A Message Passing] Sending TMSDispatchLookupRequest to '{tms_agent_id}'...")
             print(f"  Message Body: \"{tms_prompt}\"")
+            await AgentEventStreamer.emit(
+                "agent_dispatch",
+                "GeminiPlanner",
+                f"Dispatching TMSDispatchLookupRequest to TMS_Agent with Handling Unit '{wms_resp.handling_unit_id}'...",
+                {"target": str(tms_agent_id), "hu_ref": wms_resp.handling_unit_id}
+            )
 
             tms_req = TMSDispatchLookupRequest(
                 handling_unit_ref=wms_resp.handling_unit_id,
@@ -503,6 +631,13 @@ class GeminiPlannerActor(RoutedAgent):
                 synth_span.set_attribute("resolution.is_shipped", is_shipped)
                 synth_span.set_attribute("resolution.carrier", tms_resp.carrier_name)
                 synth_span.set_attribute("resolution.tracking_number", tms_resp.tracking_number)
+
+                await AgentEventStreamer.emit(
+                    "synthesis_start",
+                    "GeminiPlanner",
+                    "Validating domain constraints and synthesizing grounded final answer via Google Gemini...",
+                    {"is_shipped": is_shipped, "carrier": tms_resp.carrier_name, "tracking_number": tms_resp.tracking_number}
+                )
 
                 if self.api_key:
                     try:
@@ -555,6 +690,17 @@ Please synthesize a verified, authoritative final answer clearly confirming whet
             print(f"{'='*75}")
             print(final_answer)
             print(f"{'='*75}\n")
+
+            await AgentEventStreamer.emit(
+                "synthesis_done",
+                "GeminiPlanner",
+                "Grounded evidence verified and synthesized across all enterprise systems.",
+                {
+                    "final_answer": final_answer,
+                    "is_shipped": is_shipped,
+                    "tracking_number": tms_resp.tracking_number if is_shipped else None
+                }
+            )
 
             return SwarmResolutionResponse(
                 user_query=message.query,

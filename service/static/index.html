@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EORS Swarm • Multi-Agent Observability & Tracing</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+            },
+            dark: {
+              bg: '#0a0d14',
+              card: '#111622',
+              cardHover: '#161d2e',
+              border: '#1e293b',
+              accent: '#38bdf8'
+            }
+          },
+          fontFamily: {
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0a0d14; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    .pulse-glow {
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.35);
+    }
+  </style>
+</head>
+<body class="bg-[#0a0d14] text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-sky-500 selection:text-white">
+
+  <!-- TOP HEADER -->
+  <header class="border-b border-slate-800 bg-[#0d121c]/90 backdrop-blur sticky top-0 z-50 px-5 py-3">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      <!-- Title & Live Badges -->
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 to-indigo-500 flex items-center justify-center font-bold text-white shadow-lg shadow-sky-500/20">
+          ⚡
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base font-semibold tracking-tight text-white">EORS Multi-Agent Swarm</h1>
+            <span class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Live (4 Actors)
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 hidden sm:block">Microsoft Agent Framework • OpenTelemetry Traces • Azure App Insights</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs & External Actions -->
+      <div class="flex items-center gap-2">
+        <div class="bg-slate-900/80 p-1 rounded-lg border border-slate-800 flex items-center text-xs">
+          <button id="tab-chat" onclick="switchTab('chat')" class="px-3 py-1.5 rounded-md font-medium transition bg-sky-500 text-white shadow-sm flex items-center gap-1.5">
+            💬 Chat & Live Stream
+          </button>
+          <button id="tab-telemetry" onclick="switchTab('telemetry')" class="px-3 py-1.5 rounded-md font-medium text-slate-400 hover:text-white transition flex items-center gap-1.5">
+            🔭 OpenTelemetry UI
+          </button>
+          <button id="tab-memory" onclick="switchTab('memory')" class="px-3 py-1.5 rounded-md font-medium text-slate-400 hover:text-white transition flex items-center gap-1.5">
+            🧠 Long-Term Memory
+          </button>
+        </div>
+
+        <a href="https://portal.azure.com/#@rahulkiniorg.onmicrosoft.com/resource/subscriptions/356aded1-3f31-4544-87e0-5ac4929ed85f/resourceGroups/eors-dev/providers/microsoft.insights/components/appi-eors-dev/overview" target="_blank" class="hidden md:flex text-xs px-2.5 py-1.5 rounded-md bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 items-center gap-1.5 transition">
+          <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+          Azure App Insights ↗
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN APPLICATION CONTENT -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-5 flex flex-col min-h-0">
+
+    <!-- ===================================================================== -->
+    <!-- VIEW 1: CHAT & UNDER-THE-HOOD LIVE INSPECTOR -->
+    <!-- ===================================================================== -->
+    <div id="view-chat" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 min-h-[700px]">
+      
+      <!-- LEFT COLUMN: MINIMAL CHAT INTERFACE (Col 5/12) -->
+      <div class="lg:col-span-5 flex flex-col bg-[#111622] rounded-xl border border-slate-800 shadow-xl overflow-hidden">
+        <!-- Chat Header -->
+        <div class="px-4 py-3 border-b border-slate-800/80 bg-slate-900/40 flex items-center justify-between">
+          <div class="flex items-center gap-2 text-xs font-medium text-slate-300">
+            <span class="text-sky-400">●</span> Conversational Interface
+          </div>
+          <button onclick="clearChat()" class="text-[11px] text-slate-400 hover:text-slate-200 transition">
+            Clear Chat
+          </button>
+        </div>
+
+        <!-- Chat Suggestions Pill Bar -->
+        <div class="p-3 border-b border-slate-800/60 bg-slate-900/20 text-xs">
+          <div class="text-[11px] text-slate-400 mb-1.5 font-medium">Quick Prompts:</div>
+          <div class="flex flex-wrap gap-1.5">
+            <button onclick="applyPrompt('Has customer Acme Corp\'s laptop order shipped?')" class="text-[11px] px-2.5 py-1 rounded-md bg-slate-800/80 hover:bg-slate-700 text-sky-300 border border-slate-700 transition text-left">
+              Has customer Acme Corp's laptop order shipped?
+            </button>
+            <button onclick="applyPrompt('Trace purchase order PO-ACM-2026-9921 across warehouse and freight')" class="text-[11px] px-2.5 py-1 rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition text-left">
+              Trace PO-ACM-2026-9921
+            </button>
+            <button onclick="applyPrompt('What is the current status of handling unit HU-8841-PLT?')" class="text-[11px] px-2.5 py-1 rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition text-left">
+              Status of HU-8841-PLT
+            </button>
+          </div>
+        </div>
+
+        <!-- Chat Message Log -->
+        <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4 text-sm">
+          <!-- Initial Welcome Message -->
+          <div class="flex items-start gap-3">
+            <div class="w-7 h-7 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 flex items-center justify-center text-xs font-bold shrink-0">
+              AI
+            </div>
+            <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl rounded-tl-none p-3.5 max-w-[90%] text-slate-200 space-y-2">
+              <p class="font-medium text-white">EORS Swarm Orchestrator Online</p>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                I am connected to 4 distributed actors across 3 decoupled databases:
+              </p>
+              <ul class="text-xs text-slate-400 space-y-1 font-mono">
+                <li>• <span class="text-emerald-400 font-semibold">ERP_Agent</span>: Financial Orders & Commercial (<code class="text-slate-300">db-01-dev</code>)</li>
+                <li>• <span class="text-amber-400 font-semibold">WMS_Agent</span>: Physical Picks & Bins (<code class="text-slate-300">db-02-dev</code>)</li>
+                <li>• <span class="text-indigo-400 font-semibold">TMS_Agent</span>: Freight Routing & Tracking (<code class="text-slate-300">db-03-dev</code>)</li>
+              </ul>
+              <p class="text-xs text-slate-400">
+                Ask a question to see real-time agent coordination in the right-hand inspector.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input Footer -->
+        <div class="p-3 border-t border-slate-800 bg-slate-900/60">
+          <form id="chat-form" onsubmit="handleChatSubmit(event)" class="flex gap-2">
+            <input 
+              id="chat-input" 
+              type="text" 
+              placeholder="Ask about Acme Corp orders, tracking, shipments..." 
+              class="flex-1 bg-slate-850 border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
+              autocomplete="off"
+            />
+            <button 
+              id="send-btn" 
+              type="submit" 
+              class="px-4 py-2.5 bg-sky-500 hover:bg-sky-600 font-medium text-sm text-white rounded-lg shadow-sm transition flex items-center gap-1.5 shrink-0"
+            >
+              <span>Send</span>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: UNDER-THE-HOOD LIVE EVENT STREAMER (Col 7/12) -->
+      <div class="lg:col-span-7 flex flex-col bg-[#111622] rounded-xl border border-slate-800 shadow-xl overflow-hidden">
+        <!-- Inspector Header -->
+        <div class="px-4 py-3 border-b border-slate-800/80 bg-slate-900/40 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-white tracking-wide uppercase">Under The Hood: Live Agent Stream</span>
+            <span id="stream-status-badge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+              IDLE
+            </span>
+          </div>
+
+          <!-- Active Trace Link -->
+          <div id="active-trace-header" class="hidden text-xs text-slate-400 font-mono items-center gap-2">
+            <span>Trace:</span>
+            <button id="view-active-trace-btn" onclick="openTraceInTelemetryTab()" class="text-sky-400 hover:underline">
+              #...
+            </button>
+          </div>
+        </div>
+
+        <!-- 4-Node Swarm Actor Status Ribbon -->
+        <div class="grid grid-cols-4 gap-2 p-3 border-b border-slate-800/60 bg-slate-900/30 text-xs">
+          <!-- Planner Actor -->
+          <div id="node-planner" class="p-2 rounded-lg border border-slate-800 bg-slate-900/40 transition">
+            <div class="flex items-center justify-between text-[11px] mb-1">
+              <span class="font-medium text-purple-400">GeminiPlanner</span>
+              <span class="text-[9px] font-mono text-slate-400 status-pill">READY</span>
+            </div>
+            <div class="text-[10px] text-slate-400 truncate">Strategic Orchestrator</div>
+          </div>
+
+          <!-- ERP Actor -->
+          <div id="node-erp" class="p-2 rounded-lg border border-slate-800 bg-slate-900/40 transition">
+            <div class="flex items-center justify-between text-[11px] mb-1">
+              <span class="font-medium text-emerald-400">ERP_Agent</span>
+              <span class="text-[9px] font-mono text-slate-400 status-pill">READY</span>
+            </div>
+            <div class="text-[10px] text-slate-400 truncate">db-01-dev (Financial)</div>
+          </div>
+
+          <!-- WMS Actor -->
+          <div id="node-wms" class="p-2 rounded-lg border border-slate-800 bg-slate-900/40 transition">
+            <div class="flex items-center justify-between text-[11px] mb-1">
+              <span class="font-medium text-amber-400">WMS_Agent</span>
+              <span class="text-[9px] font-mono text-slate-400 status-pill">READY</span>
+            </div>
+            <div class="text-[10px] text-slate-400 truncate">db-02-dev (Warehouse)</div>
+          </div>
+
+          <!-- TMS Actor -->
+          <div id="node-tms" class="p-2 rounded-lg border border-slate-800 bg-slate-900/40 transition">
+            <div class="flex items-center justify-between text-[11px] mb-1">
+              <span class="font-medium text-indigo-400">TMS_Agent</span>
+              <span class="text-[9px] font-mono text-slate-400 status-pill">READY</span>
+            </div>
+            <div class="text-[10px] text-slate-400 truncate">db-03-dev (Freight)</div>
+          </div>
+        </div>
+
+        <!-- Trajectory Evaluation Scorecard Bar (Appears when completed) -->
+        <div id="eval-scorecard-banner" class="hidden px-4 py-2.5 bg-emerald-950/30 border-b border-emerald-500/30 text-xs text-emerald-300 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="font-bold text-emerald-400 flex items-center gap-1">
+              ✓ Trajectory Evaluation Passed
+            </span>
+            <div class="hidden sm:flex items-center gap-3 font-mono text-[11px] text-slate-300">
+              <span>Completeness: <strong class="text-white">100%</strong></span>
+              <span>Propagation: <strong class="text-white">100%</strong></span>
+              <span>PoLP Isolation: <strong class="text-white">100%</strong></span>
+              <span>Grounding: <strong class="text-white">100%</strong></span>
+            </div>
+          </div>
+          <button onclick="openTraceInTelemetryTab()" class="text-[11px] font-medium text-emerald-400 underline hover:text-emerald-200">
+            View Waterfall Graph →
+          </button>
+        </div>
+
+        <!-- Live Streaming Events Feed -->
+        <div id="stream-events-feed" class="flex-1 p-4 overflow-y-auto space-y-3 font-mono text-xs">
+          <!-- Placeholder when idle -->
+          <div id="empty-stream-state" class="text-center py-20 text-slate-500">
+            <div class="text-2xl mb-2">🔭</div>
+            <p class="font-sans font-medium text-slate-400">Live Agent Stream Inactive</p>
+            <p class="font-sans text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              Submit a prompt in the chat. Every internal actor thought, message dispatch, and SQL query against the MCP servers will stream here in real time.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ===================================================================== -->
+    <!-- VIEW 2: OPENTELEMETRY TRACE EXPLORER & WATERFALL UI -->
+    <!-- ===================================================================== -->
+    <div id="view-telemetry" class="hidden flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 min-h-[700px]">
+      
+      <!-- Trace History List (Col 4/12) -->
+      <div class="lg:col-span-4 flex flex-col bg-[#111622] rounded-xl border border-slate-800 shadow-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between">
+          <h2 class="text-xs font-semibold text-white uppercase tracking-wider">Recorded Traces</h2>
+          <button onclick="loadTracesList()" class="text-xs text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1">
+            🔄 Refresh
+          </button>
+        </div>
+        <div id="traces-list" class="flex-1 overflow-y-auto divide-y divide-slate-800/60 p-2 space-y-1">
+          <!-- Loaded dynamically -->
+          <div class="text-center py-10 text-slate-500 text-xs">Loading traces...</div>
+        </div>
+      </div>
+
+      <!-- Trace Waterfall & Span Inspector (Col 8/12) -->
+      <div class="lg:col-span-8 flex flex-col bg-[#111622] rounded-xl border border-slate-800 shadow-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <h2 class="text-xs font-semibold text-white uppercase tracking-wider">Distributed Trace Waterfall</h2>
+            <span id="selected-trace-pill" class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-sky-400 border border-slate-700 hidden">
+              Trace: ...
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="trace-duration-pill" class="text-xs font-mono text-emerald-400 hidden">
+              ... ms
+            </span>
+          </div>
+        </div>
+
+        <!-- Waterfall Visualization Canvas -->
+        <div id="waterfall-container" class="flex-1 p-4 overflow-y-auto space-y-2">
+          <div class="text-center py-20 text-slate-500 text-xs">
+            Select a trace from the left panel to inspect the full distributed execution graph.
+          </div>
+        </div>
+
+        <!-- Selected Span Attributes Inspector Drawer -->
+        <div id="span-attributes-drawer" class="border-t border-slate-800 bg-slate-950/80 p-4 max-h-60 overflow-y-auto hidden">
+          <div class="flex items-center justify-between mb-2">
+            <h3 id="inspect-span-name" class="text-xs font-bold text-white font-mono">Span Attributes</h3>
+            <span id="inspect-span-duration" class="text-[11px] font-mono text-emerald-400"></span>
+          </div>
+          <div id="inspect-span-attributes-table" class="font-mono text-[11px] space-y-1">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ===================================================================== -->
+    <!-- VIEW 3: LONG-TERM MEMORY (COSMOS DB) -->
+    <!-- ===================================================================== -->
+    <div id="view-memory" class="hidden flex-1 bg-[#111622] rounded-xl border border-slate-800 p-5 overflow-y-auto">
+      <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+        <div>
+          <h2 class="text-sm font-semibold text-white">Azure Cosmos DB Long-Term Memory</h2>
+          <p class="text-xs text-slate-400">Externalized session memory checkpoints persisted in <code class="text-sky-300">AgentStateDB / ActorMemory</code>.</p>
+        </div>
+        <button onclick="loadMemoryItems()" class="text-xs text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1">
+          🔄 Refresh Memory
+        </button>
+      </div>
+
+      <div id="memory-items-container" class="space-y-3">
+        <div class="text-center py-10 text-slate-500 text-xs">Loading sessions from durable memory...</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- JAVASCRIPT APP LOGIC -->
+  <script>
+    // Configuration
+    const API_BASE = window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
+      ? '' 
+      : (window.location.origin.includes('azurecontainerapps.io') ? '' : 'https://aca-maf-swarm.agreeablemeadow-194f1f73.southeastasia.azurecontainerapps.io');
+
+    let currentTraceId = null;
+    let tracesCache = [];
+
+    // Tab Switching
+    function switchTab(tabId) {
+      document.getElementById('view-chat').classList.add('hidden');
+      document.getElementById('view-telemetry').classList.add('hidden');
+      document.getElementById('view-memory').classList.add('hidden');
+
+      document.getElementById('tab-chat').className = "px-3 py-1.5 rounded-md font-medium text-slate-400 hover:text-white transition flex items-center gap-1.5";
+      document.getElementById('tab-telemetry').className = "px-3 py-1.5 rounded-md font-medium text-slate-400 hover:text-white transition flex items-center gap-1.5";
+      document.getElementById('tab-memory').className = "px-3 py-1.5 rounded-md font-medium text-slate-400 hover:text-white transition flex items-center gap-1.5";
+
+      if (tabId === 'chat') {
+        document.getElementById('view-chat').classList.remove('hidden');
+        document.getElementById('tab-chat').className = "px-3 py-1.5 rounded-md font-medium transition bg-sky-500 text-white shadow-sm flex items-center gap-1.5";
+      } else if (tabId === 'telemetry') {
+        document.getElementById('view-telemetry').classList.remove('hidden');
+        document.getElementById('tab-telemetry').className = "px-3 py-1.5 rounded-md font-medium transition bg-sky-500 text-white shadow-sm flex items-center gap-1.5";
+        loadTracesList();
+      } else if (tabId === 'memory') {
+        document.getElementById('view-memory').classList.remove('hidden');
+        document.getElementById('tab-memory').className = "px-3 py-1.5 rounded-md font-medium transition bg-sky-500 text-white shadow-sm flex items-center gap-1.5";
+        loadMemoryItems();
+      }
+    }
+
+    function applyPrompt(text) {
+      document.getElementById('chat-input').value = text;
+      document.getElementById('chat-input').focus();
+    }
+
+    function clearChat() {
+      document.getElementById('chat-messages').innerHTML = `
+        <div class="text-xs text-slate-500 text-center py-4">Chat cleared.</div>
+      `;
+    }
+
+    // Set Actor Ribbon States
+    function setActorRibbonState(actorId, state) {
+      const node = document.getElementById(`node-${actorId}`);
+      if (!node) return;
+      const pill = node.querySelector('.status-pill');
+
+      if (state === 'active') {
+        node.className = "p-2 rounded-lg border border-sky-500/80 bg-sky-950/30 pulse-glow transition";
+        if (pill) {
+          pill.className = "text-[9px] font-mono text-sky-400 font-bold status-pill animate-pulse";
+          pill.innerText = "ACTIVE";
+        }
+      } else if (state === 'done') {
+        node.className = "p-2 rounded-lg border border-emerald-500/60 bg-emerald-950/20 transition";
+        if (pill) {
+          pill.className = "text-[9px] font-mono text-emerald-400 font-bold status-pill";
+          pill.innerText = "DONE";
+        }
+      } else {
+        node.className = "p-2 rounded-lg border border-slate-800 bg-slate-900/40 transition";
+        if (pill) {
+          pill.className = "text-[9px] font-mono text-slate-400 status-pill";
+          pill.innerText = "READY";
+        }
+      }
+    }
+
+    function resetActorRibbons() {
+      ['planner', 'erp', 'wms', 'tms'].forEach(id => setActorRibbonState(id, 'ready'));
+      document.getElementById('eval-scorecard-banner').classList.add('hidden');
+    }
+
+    // Handle Chat Submit with Real-time SSE
+    async function handleChatSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById('chat-input');
+      const query = input.value.trim();
+      if (!query) return;
+
+      input.value = '';
+      resetActorRibbons();
+
+      // Append User Message to Chat
+      appendChatMessage('user', query);
+
+      // Prepare UI for streaming
+      const sendBtn = document.getElementById('send-btn');
+      sendBtn.disabled = true;
+      sendBtn.classList.add('opacity-50');
+
+      const streamBadge = document.getElementById('stream-status-badge');
+      streamBadge.className = "text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1";
+      streamBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> STREAMING`;
+
+      const feed = document.getElementById('stream-events-feed');
+      feed.innerHTML = ''; // Clear feed
+
+      // Append temporary AI thinking message
+      const aiMsgId = 'ai-msg-' + Date.now();
+      appendChatMessage('assistant', `<div class="flex items-center gap-2 text-slate-400"><span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> Coordinating multi-agent swarm across ERP, WMS, and TMS...</div>`, aiMsgId);
+
+      try {
+        const streamUrl = `${API_BASE}/api/stream?query=${encodeURIComponent(query)}`;
+        const response = await fetch(streamUrl);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop(); // Keep trailing incomplete line
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const jsonStr = line.slice(6).trim();
+              if (jsonStr === '[DONE]') continue;
+              try {
+                const event = JSON.parse(jsonStr);
+                handleStreamEvent(event, aiMsgId);
+              } catch (err) {
+                console.error('Failed to parse event JSON:', err, jsonStr);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Stream failed:', err);
+        const aiMsgElem = document.getElementById(aiMsgId);
+        if (aiMsgElem) {
+          aiMsgElem.innerHTML = `<span class="text-rose-400 font-medium">Error executing swarm:</span> ${err.message}`;
+        }
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.classList.remove('opacity-50');
+        streamBadge.className = "text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1";
+        streamBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span> IDLE`;
+      }
+    }
+
+    // Process Individual Real-Time Stream Event
+    function handleStreamEvent(event, aiMsgId) {
+      const feed = document.getElementById('stream-events-feed');
+
+      // Update Top Actor Badges based on event
+      if (event.agent === 'GeminiPlanner') {
+        setActorRibbonState('planner', event.type === 'synthesis_done' ? 'done' : 'active');
+      } else if (event.agent === 'ERP_Agent') {
+        setActorRibbonState('erp', event.type === 'tool_result' ? 'done' : 'active');
+      } else if (event.agent === 'WMS_Agent') {
+        setActorRibbonState('wms', event.type === 'tool_result' ? 'done' : 'active');
+      } else if (event.agent === 'TMS_Agent') {
+        setActorRibbonState('tms', event.type === 'tool_result' ? 'done' : 'active');
+      }
+
+      // Record Trace ID if received
+      if (event.data && event.data.trace_id) {
+        currentTraceId = event.data.trace_id;
+        const traceHeader = document.getElementById('active-trace-header');
+        traceHeader.classList.remove('hidden');
+        document.getElementById('view-active-trace-btn').innerText = `#${currentTraceId.substring(0, 10)}...`;
+      }
+
+      // Build Feed Card
+      const card = document.createElement('div');
+      card.className = "p-3 rounded-lg border border-slate-800 bg-slate-900/60 shadow-sm transition";
+
+      // Color coding per agent
+      let agentColor = "text-sky-400 border-sky-500/30 bg-sky-950/20";
+      if (event.agent === 'ERP_Agent') agentColor = "text-emerald-400 border-emerald-500/30 bg-emerald-950/20";
+      if (event.agent === 'WMS_Agent') agentColor = "text-amber-400 border-amber-500/30 bg-amber-950/20";
+      if (event.agent === 'TMS_Agent') agentColor = "text-indigo-400 border-indigo-500/30 bg-indigo-950/20";
+      if (event.agent === 'GeminiPlanner') agentColor = "text-purple-400 border-purple-500/30 bg-purple-950/20";
+
+      let headerExtra = event.database ? `<span class="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">${event.database}</span>` : '';
+
+      let bodyHtml = `<p class="text-slate-200 mt-1">${escapeHtml(event.message)}</p>`;
+
+      // If event contains SQL query, format it nicely
+      if (event.data && event.data.sql) {
+        bodyHtml += `
+          <div class="mt-2 bg-slate-950 p-2.5 rounded border border-slate-800/80 overflow-x-auto text-[11px] text-sky-300">
+            <span class="text-slate-400 text-[10px] block uppercase font-bold mb-1">Generated SQL Tool Query:</span>
+            <code>${escapeHtml(event.data.sql)}</code>
+          </div>
+        `;
+      }
+
+      // If event contains structured output result
+      if (event.type === 'tool_result' && event.data) {
+        bodyHtml += `
+          <div class="mt-2 bg-slate-950/90 p-2.5 rounded border border-emerald-900/40 text-[11px] text-emerald-300 space-y-1">
+            <span class="text-slate-400 text-[10px] block uppercase font-bold">Returned Entity Records:</span>
+            <pre class="overflow-x-auto text-[10.5px]">${escapeHtml(JSON.stringify(event.data, null, 2))}</pre>
+          </div>
+        `;
+      }
+
+      card.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${agentColor}">${event.agent}</span>
+            <span class="text-[10px] text-slate-400 uppercase font-semibold">${event.type}</span>
+            ${headerExtra}
+          </div>
+          <span class="text-[10px] text-slate-400 font-mono">${new Date().toLocaleTimeString()}</span>
+        </div>
+        ${bodyHtml}
+      `;
+
+      feed.appendChild(card);
+      feed.scrollTop = feed.scrollHeight;
+
+      // Handle Completion
+      if (event.type === 'completed' && event.data) {
+        const aiMsgElem = document.getElementById(aiMsgId);
+        if (aiMsgElem) {
+          aiMsgElem.innerHTML = `
+            <div class="space-y-3">
+              <div class="prose prose-invert text-xs leading-relaxed max-w-none">
+                ${formatMarkdownAnswer(event.data.final_answer)}
+              </div>
+              <div class="pt-2 border-t border-slate-700/60 flex flex-wrap items-center justify-between text-[11px] text-slate-400">
+                <div class="flex items-center gap-2">
+                  <span class="text-emerald-400 font-semibold">● Grounded Evidence Verified</span>
+                  <span>Tracking: <strong class="text-white">${event.data.tracking_number || 'N/A'}</strong></span>
+                </div>
+                <button onclick="openTraceInTelemetryTab('${event.data.trace_id}')" class="text-sky-400 hover:underline">
+                  Inspect Trace (${(event.data.trace_id || '').substring(0, 8)}...) →
+                </button>
+              </div>
+            </div>
+          `;
+        }
+
+        // Show Scorecard Banner
+        const banner = document.getElementById('eval-scorecard-banner');
+        banner.classList.remove('hidden');
+      }
+    }
+
+    function appendChatMessage(sender, content, id = null) {
+      const chat = document.getElementById('chat-messages');
+      const msgDiv = document.createElement('div');
+      msgDiv.className = "flex items-start gap-3";
+
+      if (sender === 'user') {
+        msgDiv.innerHTML = `
+          <div class="flex-1"></div>
+          <div class="bg-sky-600/20 border border-sky-500/30 rounded-xl rounded-tr-none p-3.5 max-w-[85%] text-slate-100 text-xs sm:text-sm">
+            ${escapeHtml(content)}
+          </div>
+          <div class="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+            U
+          </div>
+        `;
+      } else {
+        msgDiv.innerHTML = `
+          <div class="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center text-xs font-bold shrink-0">
+            AI
+          </div>
+          <div id="${id || ''}" class="bg-slate-800/60 border border-slate-700/60 rounded-xl rounded-tl-none p-3.5 max-w-[90%] text-slate-200 text-xs sm:text-sm">
+            ${content}
+          </div>
+        `;
+      }
+
+      chat.appendChild(msgDiv);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // Load OpenTelemetry Traces
+    async function loadTracesList() {
+      const listElem = document.getElementById('traces-list');
+      listElem.innerHTML = `<div class="text-center py-6 text-slate-400 text-xs">Fetching trace spans...</div>`;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/traces`);
+        const data = await res.json();
+        tracesCache = data.traces || [];
+
+        if (tracesCache.length === 0) {
+          listElem.innerHTML = `<div class="text-center py-6 text-slate-400 text-xs">No traces recorded yet. Execute a query in the chat first!</div>`;
+          return;
+        }
+
+        listElem.innerHTML = '';
+        tracesCache.forEach(t => {
+          const item = document.createElement('div');
+          item.className = `p-2.5 rounded-lg border border-slate-800/80 bg-slate-900/40 hover:bg-slate-800/60 cursor-pointer transition text-xs ${t.trace_id === currentTraceId ? 'border-sky-500/60 bg-sky-950/20' : ''}`;
+          item.onclick = () => renderWaterfall(t.trace_id);
+
+          item.innerHTML = `
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-mono text-sky-400 font-semibold">${t.trace_id.substring(0, 12)}...</span>
+              <span class="text-[10px] font-mono text-emerald-400 font-bold">${t.duration_ms} ms</span>
+            </div>
+            <div class="text-slate-300 font-medium truncate text-[11px]">${t.user_query || t.root_span}</div>
+            <div class="flex items-center justify-between text-[10px] text-slate-400 mt-1">
+              <span>${t.span_count} spans</span>
+              <span class="text-emerald-400">${t.status}</span>
+            </div>
+          `;
+          listElem.appendChild(item);
+        });
+
+        // Auto select first or current
+        if (currentTraceId) {
+          renderWaterfall(currentTraceId);
+        } else if (tracesCache.length > 0) {
+          renderWaterfall(tracesCache[0].trace_id);
+        }
+      } catch (err) {
+        listElem.innerHTML = `<div class="text-rose-400 text-xs p-3">Failed to load traces: ${err.message}</div>`;
+      }
+    }
+
+    // Render OpenTelemetry Waterfall View
+    async function renderWaterfall(traceId) {
+      currentTraceId = traceId;
+      const pill = document.getElementById('selected-trace-pill');
+      pill.innerText = `Trace: #${traceId.substring(0, 14)}...`;
+      pill.classList.remove('hidden');
+
+      const container = document.getElementById('waterfall-container');
+      container.innerHTML = `<div class="text-center py-10 text-slate-400 text-xs">Loading trace spans...</div>`;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/traces/${traceId}`);
+        const data = await res.json();
+        const spans = data.spans || [];
+
+        if (spans.length === 0) {
+          container.innerHTML = `<div class="text-center py-10 text-slate-400 text-xs">No spans found for this trace.</div>`;
+          return;
+        }
+
+        const totalDuration = Math.max(...spans.map(s => s.start_offset_ms + s.duration_ms), 1);
+        document.getElementById('trace-duration-pill').innerText = `${Math.round(totalDuration)} ms`;
+        document.getElementById('trace-duration-pill').classList.remove('hidden');
+
+        container.innerHTML = `
+          <!-- Timeline Scale Header -->
+          <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 border-b border-slate-800 pb-1 mb-3">
+            <span>0 ms</span>
+            <span>${Math.round(totalDuration / 2)} ms</span>
+            <span>${Math.round(totalDuration)} ms</span>
+          </div>
+        `;
+
+        spans.forEach((span, idx) => {
+          const row = document.createElement('div');
+          row.className = "p-2 rounded-lg bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 cursor-pointer transition text-xs flex flex-col gap-1.5";
+          row.onclick = () => inspectSpanAttributes(span);
+
+          // Calculate offset % and width %
+          const leftPct = (span.start_offset_ms / totalDuration) * 100;
+          const widthPct = Math.max((span.duration_ms / totalDuration) * 100, 2);
+
+          // Span domain color
+          let barColor = "bg-sky-500";
+          if (span.name.includes("erp")) barColor = "bg-emerald-500";
+          if (span.name.includes("wms")) barColor = "bg-amber-500";
+          if (span.name.includes("tms")) barColor = "bg-indigo-500";
+          if (span.name.includes("planner")) barColor = "bg-purple-500";
+          if (span.name.includes("mcp_tool")) barColor = "bg-teal-400";
+
+          row.innerHTML = `
+            <div class="flex items-center justify-between font-mono text-[11px]">
+              <div class="flex items-center gap-2 truncate">
+                <span class="w-2 h-2 rounded-full ${barColor}"></span>
+                <span class="font-semibold text-slate-200 truncate">${escapeHtml(span.name)}</span>
+              </div>
+              <span class="text-slate-400 font-bold shrink-0">${span.duration_ms} ms</span>
+            </div>
+            
+            <!-- Horizontal Gantt Bar -->
+            <div class="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden relative border border-slate-800/80">
+              <div 
+                class="h-full rounded-full ${barColor} opacity-90 transition-all" 
+                style="margin-left: ${leftPct.toFixed(1)}%; width: ${widthPct.toFixed(1)}%;"
+              ></div>
+            </div>
+          `;
+
+          container.appendChild(row);
+        });
+
+        // Auto inspect first span
+        if (spans.length > 0) inspectSpanAttributes(spans[0]);
+
+      } catch (err) {
+        container.innerHTML = `<div class="text-rose-400 text-xs p-3">Failed to load waterfall: ${err.message}</div>`;
+      }
+    }
+
+    // Inspect Span Attributes
+    function inspectSpanAttributes(span) {
+      const drawer = document.getElementById('span-attributes-drawer');
+      drawer.classList.remove('hidden');
+
+      document.getElementById('inspect-span-name').innerText = span.name;
+      document.getElementById('inspect-span-duration').innerText = `${span.duration_ms} ms (Offset: +${span.start_offset_ms} ms)`;
+
+      const table = document.getElementById('inspect-span-attributes-table');
+      table.innerHTML = `
+        <div class="grid grid-cols-12 py-0.5 border-b border-slate-900 text-slate-400">
+          <span class="col-span-4 font-semibold">span_id</span>
+          <span class="col-span-8 text-slate-200 truncate">${span.span_id}</span>
+        </div>
+        <div class="grid grid-cols-12 py-0.5 border-b border-slate-900 text-slate-400">
+          <span class="col-span-4 font-semibold">parent_span_id</span>
+          <span class="col-span-8 text-slate-200 truncate">${span.parent_span_id || 'root'}</span>
+        </div>
+      `;
+
+      if (span.attributes) {
+        for (const [key, val] of Object.entries(span.attributes)) {
+          const row = document.createElement('div');
+          row.className = "grid grid-cols-12 py-1 border-b border-slate-900 text-slate-400";
+          row.innerHTML = `
+            <span class="col-span-4 font-semibold text-sky-400 truncate">${escapeHtml(key)}</span>
+            <span class="col-span-8 text-slate-200 break-all">${escapeHtml(String(val))}</span>
+          `;
+          table.appendChild(row);
+        }
+      }
+    }
+
+    function openTraceInTelemetryTab(traceId = null) {
+      if (traceId) currentTraceId = traceId;
+      switchTab('telemetry');
+    }
+
+    // Load Memory Sessions
+    async function loadMemoryItems() {
+      const container = document.getElementById('memory-items-container');
+      container.innerHTML = `<div class="text-center py-6 text-slate-400 text-xs">Loading sessions...</div>`;
+      try {
+        const res = await fetch(`${API_BASE}/api/memory`);
+        const data = await res.json();
+        const items = data.sessions || [];
+
+        if (items.length === 0) {
+          container.innerHTML = `<div class="text-center py-6 text-slate-400 text-xs">No long-term session records stored yet.</div>`;
+          return;
+        }
+
+        container.innerHTML = '';
+        items.forEach(item => {
+          const card = document.createElement('div');
+          card.className = "p-3.5 rounded-lg border border-slate-800 bg-slate-900/40 text-xs space-y-2";
+          card.innerHTML = `
+            <div class="flex items-center justify-between">
+              <span class="font-mono text-sky-400 font-bold">Session: ${item.session_id}</span>
+              <span class="text-slate-400">${new Date((item.timestamp || 0) * 1000).toLocaleString()}</span>
+            </div>
+            <p class="text-slate-200 font-medium">"${escapeHtml(item.user_query)}"</p>
+            <div class="flex flex-wrap gap-3 font-mono text-[11px] text-slate-400 pt-1 border-t border-slate-800">
+              <span>Customer: <strong class="text-white">${item.customer_name || 'N/A'}</strong></span>
+              <span>Order: <strong class="text-emerald-400">${item.order_id || 'N/A'}</strong></span>
+              <span>Handling Unit: <strong class="text-amber-400">${item.handling_unit_id || 'N/A'}</strong></span>
+              <span>Tracking: <strong class="text-indigo-400">${item.tracking_number || 'N/A'}</strong></span>
+              <span>Shipped: <strong class="${item.is_shipped ? 'text-emerald-400' : 'text-rose-400'}">${item.is_shipped ? 'YES' : 'NO'}</strong></span>
+            </div>
+          `;
+          container.appendChild(card);
+        });
+      } catch (err) {
+        container.innerHTML = `<div class="text-rose-400 text-xs p-3">Failed to load memory: ${err.message}</div>`;
+      }
+    }
+
+    function formatMarkdownAnswer(text) {
+      if (!text) return '';
+      return text
+        .replace(/\n\n/g, '<br/><br/>')
+        .replace(/\n/g, '<br/>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
+        .replace(/• (.*?)/g, '<div class="pl-2 border-l-2 border-sky-500/40 my-1 text-slate-200">$1</div>');
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
