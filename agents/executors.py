@@ -1,4 +1,4 @@
-"""Specialized Domain Executor Sub-Agents (MAF Actors) powered by Featherless.ai (DeepSeek-Coder-V2).
+"""Specialized Domain Executor Sub-Agents (MAF Actors) powered by Google Gemini.
 Strictly decoupled: each executor is bound exclusively to its own domain MCP server.
 """
 
@@ -7,12 +7,10 @@ import json
 import asyncio
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-import httpx
 
 from agents.config import (
-    FEATHERLESS_API_KEY,
-    FEATHERLESS_BASE_URL,
-    FEATHERLESS_MODEL_ID,
+    GEMINI_API_KEY,
+    GEMINI_EXECUTOR_MODEL_ID,
     MCP_SERVERS
 )
 from agents.mcp_client import MCPDiscoveryClient
@@ -27,21 +25,19 @@ class ToolCallResult(BaseModel):
 
 
 class BaseExecutorAgent:
-    """Base class for domain-isolated Executor Agents using Featherless.ai."""
+    """Base class for domain-isolated Executor Agents using Google Gemini."""
 
     def __init__(
         self,
         domain: str,
         system_prompt: str,
         api_key: Optional[str] = None,
-        model_id: Optional[str] = None,
-        base_url: Optional[str] = None
+        model_id: Optional[str] = None
     ):
         self.domain = domain
         self.system_prompt = system_prompt
-        self.api_key = api_key or os.environ.get("FEATHERLESS_API_KEY", "") or FEATHERLESS_API_KEY
-        self.model_id = model_id or os.environ.get("FEATHERLESS_MODEL", "") or FEATHERLESS_MODEL_ID
-        self.base_url = base_url or os.environ.get("FEATHERLESS_BASE_URL", "") or FEATHERLESS_BASE_URL
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "") or GEMINI_API_KEY
+        self.model_id = model_id or os.environ.get("GEMINI_EXECUTOR_MODEL_ID", "") or GEMINI_EXECUTOR_MODEL_ID
         self.mcp_client = MCPDiscoveryClient()
         self.server_info = MCP_SERVERS[domain]
 
@@ -67,27 +63,21 @@ class BaseExecutorAgent:
     async def execute_task(self, task_instruction: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Processes a task instruction, generates appropriate domain SQL, and executes it via MCP."""
         if self.api_key:
-            return await self._execute_with_featherless(task_instruction, context)
+            return await self._execute_with_gemini(task_instruction, context)
         else:
             return await self._execute_preflight(task_instruction, context)
 
-    async def _execute_with_featherless(self, task_instruction: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Invokes DeepSeek-Coder-V2 on Featherless.ai to formulate and execute the query."""
-        from openai import AsyncOpenAI
+    async def _execute_with_gemini(self, task_instruction: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Invokes Google Gemini to formulate and execute the query."""
+        from google import genai
+        from google.genai import types
 
-        client = AsyncOpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url.rstrip("/")
-        )
+        client = genai.Client(api_key=self.api_key)
 
         tools = await self.mcp_client.list_tools_for_server(self.domain)
         schema = await self.mcp_client.get_schema_for_server(self.domain)
 
-        prompt_messages = [
-            {"role": "system", "content": self.system_prompt},
-            {
-                "role": "user",
-                "content": f"""TASK:
+        prompt_content = f"""TASK:
 {task_instruction}
 
 ADDITIONAL CONTEXT FROM ORCHESTRATOR:
@@ -107,22 +97,28 @@ Formulate a read-only SQL query to accomplish the task. Return JSON matching:
   "max_rows": 100
 }}
 """
-            }
-        ]
 
-        response = await client.chat.completions.create(
+        response = await client.aio.models.generate_content(
             model=self.model_id,
-            messages=prompt_messages,
-            response_format={"type": "json_object"},
-            temperature=0.1
+            contents=prompt_content,
+            config=types.GenerateContentConfig(
+                system_instruction=self.system_prompt,
+                response_mime_type="application/json",
+                temperature=0.1
+            )
         )
 
-        content = response.choices[0].message.content
+        content = response.text
         try:
             parsed = json.loads(content)
             tool_name = parsed.get("tool_to_call")
             sql = parsed.get("sql_query")
             max_rows = parsed.get("max_rows", 100)
+
+            # Fallback tool name if omitted or shortened
+            suffix = {"ERP": "db_01", "WMS": "db_02", "TMS": "db_03"}[self.domain]
+            if not tool_name or tool_name not in self._get_allowed_tool_names():
+                tool_name = f"execute_read_query_{suffix}"
 
             # Execute via strictly isolated MCP tool
             exec_res = await self.execute_tool(tool_name, {"query": sql, "max_rows": max_rows})
@@ -145,17 +141,18 @@ Formulate a read-only SQL query to accomplish the task. Return JSON matching:
             }
 
     async def _execute_preflight(self, task_instruction: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Awaiting Featherless API key: introspects tools and verifies connectivity."""
+        """Awaiting Gemini API key: introspects tools and verifies connectivity."""
         tools = await self.mcp_client.list_tools_for_server(self.domain)
         return {
             "status": "initialized_awaiting_api_key",
             "domain": self.domain,
             "agent": self.__class__.__name__,
-            "message": f"{self.__class__.__name__} is online and connected strictly to {self.server_info['name']}. Provide FEATHERLESS_API_KEY to activate DeepSeek-Coder-V2 inference.",
+            "message": f"{self.__class__.__name__} is online and connected strictly to {self.server_info['name']}. Provide GEMINI_API_KEY to activate Gemini inference.",
             "task_received": task_instruction,
             "allowed_tools": self._get_allowed_tool_names(),
             "live_tools_verified": [t["name"] for t in tools]
         }
+
 
 
 # ============================================================================

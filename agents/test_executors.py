@@ -91,6 +91,15 @@ class TestExecutors(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(query_res["rows"][0]["Tracking_Number"], "TRK-AFX-9948201")
         print("  -> Passed: TMS_Agent resolved tracking TRK-AFX-9948201 successfully!")
 
+    async def test_preflight_awaiting_gemini_key(self):
+        """Verify preflight task execution when awaiting GEMINI_API_KEY."""
+        print("\n[Test] Testing preflight task execution awaiting GEMINI_API_KEY...")
+        agent = ERP_Agent(api_key="")
+        res = await agent.execute_task("Find Acme orders")
+        self.assertEqual(res.get("status"), "initialized_awaiting_api_key")
+        self.assertIn("GEMINI_API_KEY", res.get("message", ""))
+        print("  -> Passed: Preflight verification correctly prompts for GEMINI_API_KEY!")
+
 
 if __name__ == "__main__":
     unittest.main()

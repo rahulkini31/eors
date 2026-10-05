@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 
 from agents.config import (
     GEMINI_API_KEY,
-    FEATHERLESS_API_KEY,
     MCP_SERVERS
 )
 from agents.planner_agent import PlannerAgent
@@ -44,19 +43,17 @@ class MultiAgentOrchestrator:
 
     def __init__(
         self,
-        gemini_api_key: Optional[str] = None,
-        featherless_api_key: Optional[str] = None
+        gemini_api_key: Optional[str] = None
     ):
         self.gemini_key = gemini_api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or GEMINI_API_KEY
-        self.featherless_key = featherless_api_key or os.environ.get("FEATHERLESS_API_KEY") or FEATHERLESS_API_KEY
 
         # Initialize the Primary Strategic Planner Agent (No DB access)
         self.planner = PlannerAgent(api_key=self.gemini_key)
 
-        # Initialize the three Domain Executors (strictly decoupled)
-        self.erp_agent = ERP_Agent(api_key=self.featherless_key)
-        self.wms_agent = WMS_Agent(api_key=self.featherless_key)
-        self.tms_agent = TMS_Agent(api_key=self.featherless_key)
+        # Initialize the three Domain Executors (strictly decoupled, powered by Google Gemini)
+        self.erp_agent = ERP_Agent(api_key=self.gemini_key)
+        self.wms_agent = WMS_Agent(api_key=self.gemini_key)
+        self.tms_agent = TMS_Agent(api_key=self.gemini_key)
 
     async def verify_infrastructure(self) -> Dict[str, Any]:
         """Pings all 3 Azure Container App MCP servers."""
@@ -97,8 +94,8 @@ class MultiAgentOrchestrator:
 
         steps: List[SwarmExecutionStep] = []
 
-        # If live LLM keys are configured, run full LLM multi-agent loop
-        if self.gemini_key and self.featherless_key:
+        # If Gemini API key is configured, run full LLM multi-agent loop
+        if self.gemini_key:
             return await self._run_llm_swarm(user_query, planner_plan, architectures, start_time)
 
         # Otherwise run deterministic pre-flight execution using live MCP servers
@@ -288,7 +285,7 @@ class MultiAgentOrchestrator:
             metadata={
                 "total_duration_ms": total_dur,
                 "orchestrator_model": "Google Gemini (Strategic Planner)",
-                "executor_model": "DeepSeek-Coder-V2 / Featherless.ai",
+                "executor_model": "Google Gemini (Domain Executors)",
                 "isolation_mode": "Strict Process & UAMI Sandboxing"
             }
         )
@@ -300,7 +297,7 @@ class MultiAgentOrchestrator:
         architectures: Dict[str, Any],
         start_time: float
     ) -> SwarmExecutionResult:
-        """Full LLM execution loop when GEMINI_API_KEY and FEATHERLESS_API_KEY are injected."""
+        """Full LLM execution loop powered end-to-end by Google Gemini."""
         steps: List[SwarmExecutionStep] = []
         plan_content = planner_plan.get("plan", {})
         phases = plan_content.get("execution_phases", [])
@@ -341,6 +338,40 @@ class MultiAgentOrchestrator:
                 duration_ms=step_dur
             ))
 
-        # Have Gemini synthesize the final answer
-        final_answer = f"Swarm completed {len(steps)} sub-tasks across ERP, WMS, and TMS."
+        # Synthesize final answer across domains using Google Gemini
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=self.gemini_key)
+            synthesis_prompt = f"""USER QUERY:
+{user_query}
+
+MULTI-DOMAIN EXECUTION FINDINGS ACROSS THE ECOSYSTEM:
+{json.dumps([{
+    'step': s.step_number,
+    'domain': s.domain,
+    'agent': s.agent_name,
+    'objective': s.objective,
+    'sql_executed': s.sql_executed,
+    'records_returned': s.records_returned
+} for s in steps], indent=2)}
+
+Please synthesize a comprehensive, verified, professional answer directly addressing the user's question. Clearly articulate the multi-hop facts established from:
+1. Commercial ERP (db-01-dev): Order status, customer, line items
+2. Physical WMS (db-02-dev): Outbound pick, handling unit container, dock staging/loading status
+3. Transportation TMS (db-03-dev): Freight carrier manifest, tracking number, shipment status, dispatch timestamp
+Ensure zero cross-domain hallucination and clearly state if the order has shipped.
+"""
+            synth_resp = await client.aio.models.generate_content(
+                model=self.planner.model_id,
+                contents=synthesis_prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.2
+                )
+            )
+            final_answer = synth_resp.text
+        except Exception as e:
+            final_answer = f"Swarm completed {len(steps)} sub-tasks across ERP, WMS, and TMS. (Synthesis note: {e})"
+
         return self._build_result(user_query, True, architectures, steps, final_answer, start_time)

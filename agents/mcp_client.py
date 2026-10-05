@@ -78,7 +78,12 @@ class MCPDiscoveryClient:
                         if call_res.content and len(call_res.content) > 0:
                             raw_text = call_res.content[0].text
                             try:
-                                return json.loads(raw_text)
+                                parsed = json.loads(raw_text)
+                                if isinstance(parsed, dict) and parsed.get("status") == "error" and attempt < max_retries - 1:
+                                    last_error = parsed.get("error", "database error")
+                                    await asyncio.sleep(2 ** attempt + 2)
+                                    continue
+                                return parsed
                             except Exception:
                                 return {"status": "success", "raw": raw_text}
                         return {"status": "empty"}
