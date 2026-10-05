@@ -1,0 +1,16 @@
+componentType: state.azure.cosmosdb
+version: v1
+metadata:
+  - name: url
+    value: "https://cosmos-eors-dev.documents.azure.com:443/"
+  - name: masterKey
+    secretRef: cosmos-key
+  - name: database
+    value: "AgentStateDB"
+  - name: collection
+    value: "ActorMemory"
+secrets:
+  - name: cosmos-key
+    value: "${COSMOS_PRIMARY_KEY}"
+scopes:
+  - aca-maf-swarm
