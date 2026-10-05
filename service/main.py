@@ -4,6 +4,7 @@ Integrates Dapr sidecars, OpenTelemetry distributed tracing, Application Insight
 
 import os
 import json
+import time
 import logging
 import asyncio
 from pathlib import Path
