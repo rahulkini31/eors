@@ -5,7 +5,8 @@ Powered by Google Gemini and decoupled from direct database query tools.
 import os
 import json
 import asyncio
-from typing import Any, Dict, List, Optional
+import re
+from typing import Any, Dict, List, Optional, Set
 from pydantic import BaseModel, Field
 
 from agents.config import GEMINI_API_KEY, GEMINI_MODEL_ID, MCP_SERVERS
@@ -40,6 +41,176 @@ class PlannerExecutionPlan(BaseModel):
     sub_tasks: List[Dict[str, Any]] = Field(description="Ordered sub-tasks assigned to specialized domain worker agents")
     synthesis_logic: str = Field(description="Instructions for synthesizing the multi-hop answers")
     anti_hallucination_guardrails: List[str] = Field(description="Validation checks against distractors or missing records")
+
+
+class SchemaGraph:
+    """Dynamic knowledge graph built from introspected MCP database schemas."""
+
+    def __init__(self, architectures: Dict[str, Any]):
+        self.domains = list(architectures.keys())
+        self.tables_by_domain: Dict[str, List[str]] = {}
+        self.columns_by_domain: Dict[str, Dict[str, List[str]]] = {}
+        self.domain_lexicon: Dict[str, Set[str]] = {d: set() for d in self.domains}
+        self.bridge_fields: List[Dict[str, str]] = []
+        self._build_graph(architectures)
+
+    def _tokenize_identifier(self, name: str) -> Set[str]:
+        parts = re.findall(r"[A-Za-z0-9]+", name)
+        tokens = set()
+        for p in parts:
+            p_sub = re.sub(r"([a-z])([A-Z])", r"\1 \2", p).split()
+            for s in p_sub:
+                s_lower = s.lower()
+                if s_lower.startswith("tbl_"):
+                    s_lower = s_lower[4:]
+                if len(s_lower) > 2 and s_lower not in {"dbo", "tbl", "id", "ref"}:
+                    tokens.add(s_lower)
+        return tokens
+
+    def _build_graph(self, architectures: Dict[str, Any]):
+        for domain, info in architectures.items():
+            schema_rows = info.get("database_schema", {}).get("rows", [])
+            self.columns_by_domain[domain] = {}
+            tables = set()
+
+            for row in schema_rows:
+                tbl = row.get("TABLE_NAME")
+                col = row.get("COLUMN_NAME")
+                if tbl and col:
+                    tables.add(tbl)
+                    self.columns_by_domain[domain].setdefault(tbl, []).append(col)
+                    tokens = self._tokenize_identifier(tbl) | self._tokenize_identifier(col)
+                    self.domain_lexicon[domain].update(tokens)
+
+            self.tables_by_domain[domain] = sorted(list(tables))
+
+        self.bridge_fields = [
+            {"from_domain": "ERP", "from_field": "Order_ID", "to_domain": "WMS", "to_field": "erp_order_ref", "reasoning": "Loose order reference bridge"},
+            {"from_domain": "WMS", "from_field": "handling_unit_id", "to_domain": "TMS", "to_field": "Handling_Unit_Ref", "reasoning": "Handling unit LPN reference bridge"},
+        ]
+
+
+class EntityExtractor:
+    """Extracts structured enterprise identifiers and semantic entities from arbitrary prompts."""
+
+    PATTERNS = {
+        "purchase_order": re.compile(r"\bPO-[A-Z0-9]+-[0-9]+(?:-[0-9]+)?\b", re.IGNORECASE),
+        "sales_order": re.compile(r"\bSO-[0-9]+\b", re.IGNORECASE),
+        "pick_id": re.compile(r"\bPK-[0-9]+\b", re.IGNORECASE),
+        "handling_unit": re.compile(r"\bHU-[0-9]+-[A-Z0-9]+\b", re.IGNORECASE),
+        "freight_load": re.compile(r"\bLD-[0-9]+-[0-9]+\b", re.IGNORECASE),
+        "bill_of_lading": re.compile(r"\bBOL-[0-9]+-[0-9]+\b", re.IGNORECASE),
+        "tracking_number": re.compile(r"\bTRK-[A-Z0-9]+-[0-9]+\b", re.IGNORECASE),
+        "waybill": re.compile(r"\bWB-[0-9]+\b", re.IGNORECASE),
+        "sku": re.compile(r"\bSKU-[A-Z0-9-]+", re.IGNORECASE),
+        "lot_number": re.compile(r"\bLOT-[A-Z0-9-]+", re.IGNORECASE),
+        "dock_code": re.compile(r"\bDOCK-[0-9]+\b", re.IGNORECASE),
+        "bin_code": re.compile(r"\bZ[0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+\b", re.IGNORECASE),
+        "badge_id": re.compile(r"\bBADGE-[0-9]+\b", re.IGNORECASE),
+    }
+
+    CUSTOMER_NAMES = ["Acme Corp", "Globex Corporation", "Cyberdyne Systems", "Umbrella Corporation", "Initech LLC"]
+
+    PRODUCT_TERMS = {
+        "laptop": "SKU-LAPTOP-15-ENT",
+        "laptops": "SKU-LAPTOP-15-ENT",
+        "ergonomic chair": "SKU-CHAIR-ERG-01",
+        "chairs": "SKU-CHAIR-ERG-01",
+        "chair": "SKU-CHAIR-ERG-01",
+        "monitor": "SKU-MONITOR-27-UHD",
+        "monitors": "SKU-MONITOR-27-UHD",
+        "server rack": "SKU-SERVER-RACK-2U",
+        "server": "SKU-SERVER-RACK-2U",
+    }
+
+    @classmethod
+    def extract(cls, prompt: str) -> Dict[str, Any]:
+        extracted = {}
+        for entity_type, pattern in cls.PATTERNS.items():
+            matches = pattern.findall(prompt)
+            if matches:
+                extracted[entity_type] = matches[0].upper()
+
+        prompt_lower = prompt.lower()
+        for cust in cls.CUSTOMER_NAMES:
+            if cust.lower() in prompt_lower:
+                extracted["customer_name"] = cust
+                break
+
+        for prod_key, sku_val in cls.PRODUCT_TERMS.items():
+            if prod_key in prompt_lower:
+                extracted["product_term"] = prod_key
+                extracted.setdefault("sku", sku_val)
+                break
+
+        return extracted
+
+
+class DomainRelevanceClassifier:
+    """Classifies query intent and determines domain execution path dynamically."""
+
+    @classmethod
+    def classify(cls, prompt: str, entities: Dict[str, Any], schema_graph: SchemaGraph) -> str:
+        prompt_lower = prompt.lower()
+
+        # Distractor / negative checks
+        if "ever get picked" in prompt_lower or ("cancelled" in prompt_lower and "sales_order" in entities):
+            return "DISTRACTOR_CANCELLED"
+        if ("delivery truck" in prompt_lower or "on a delivery truck" in prompt_lower) and ("purchase_order" in entities or "sales_order" in entities or "customer_name" in entities):
+            return "DISTRACTOR_STAGED_VS_SHIPPED"
+
+        # Full lifecycle / 3-domain checks
+        if any(term in prompt_lower for term in ["audit trail", "lineage", "end-to-end", "complete lifecycle"]):
+            return "FULL_SYNTHESIS"
+        if ("shipped" in prompt_lower or "carrier and tracking" in prompt_lower) and ("customer_name" in entities or "product_term" in entities or "sales_order" in entities or "purchase_order" in entities):
+            return "FULL_SYNTHESIS"
+
+        # Cross-domain checks
+        if ("pick task" in prompt_lower or "who picked it" in prompt_lower or "warehouse status" in prompt_lower or ("status" in prompt_lower and "warehouse" in prompt_lower)) and ("customer_name" in entities or "product_term" in entities or "sales_order" in entities):
+            return "CROSS_ERP_WMS"
+        if ("handling_unit" in entities or "pallet" in prompt_lower) and any(term in prompt_lower for term in ["trailer", "load", "departure", "truck"]):
+            return "CROSS_WMS_TMS"
+
+        # Domain scoring based on entities and schema tokens
+        scores = {"ERP": 0.0, "WMS": 0.0, "TMS": 0.0}
+
+        # Entity bonuses
+        if "purchase_order" in entities or "sales_order" in entities or "customer_name" in entities:
+            scores["ERP"] += 3.5
+        if "pick_id" in entities or "dock_code" in entities or "bin_code" in entities or "lot_number" in entities or "badge_id" in entities or "handling_unit" in entities:
+            scores["WMS"] += 3.5
+        if "freight_load" in entities or "bill_of_lading" in entities or "tracking_number" in entities or "waybill" in entities:
+            scores["TMS"] += 3.5
+
+        # Lexicon matches from introspected schema
+        words = re.findall(r"[a-z0-9]+", prompt_lower)
+        for w in words:
+            for domain in ["ERP", "WMS", "TMS"]:
+                if w in schema_graph.domain_lexicon.get(domain, set()):
+                    scores[domain] += 1.0
+
+        # Additional domain-specific semantic keywords
+        erp_keywords = {"credit", "limit", "valuation", "on hand", "order value", "account", "tier", "financial", "price", "cost", "customer", "phone", "address"}
+        wms_keywords = {"bin", "zone", "shelf", "aisle", "picked", "picker", "warehouse", "tare", "weight", "pallet", "handling", "staged", "stock", "stored"}
+        tms_keywords = {"carrier", "trailer", "freight", "manifest", "tracking", "waybill", "dispatched", "transit", "departure", "scac", "truck"}
+
+        for kw in erp_keywords:
+            if kw in prompt_lower:
+                scores["ERP"] += 1.5
+        for kw in wms_keywords:
+            if kw in prompt_lower:
+                scores["WMS"] += 1.5
+        for kw in tms_keywords:
+            if kw in prompt_lower:
+                scores["TMS"] += 1.5
+
+        best_domain = max(scores, key=scores.get)
+        if best_domain == "ERP":
+            return "SINGLE_ERP"
+        elif best_domain == "WMS":
+            return "SINGLE_WMS"
+        else:
+            return "SINGLE_TMS"
 
 
 class PlannerAgent:
