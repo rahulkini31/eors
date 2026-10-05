@@ -1,5 +1,6 @@
 """Asynchronous client for interacting with the three MCP database servers via SSE."""
 
+import asyncio
 import json
 import httpx
 from typing import Any, Dict, List, Optional

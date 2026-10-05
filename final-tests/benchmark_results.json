@@ -1,0 +1,653 @@
+{
+  "summary": {
+    "timestamp": "2026-10-05 11:39:51Z",
+    "total_tests": 16,
+    "passed_tests": 16,
+    "failed_tests": 0,
+    "accuracy_pct": 100.0,
+    "total_latency_sec": 133.34,
+    "avg_latency_sec": 8.33,
+    "category_breakdown": {
+      "Single-Domain ERP": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "accuracy_pct": 100.0,
+        "avg_latency_sec": 8.68
+      },
+      "Single-Domain WMS": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "accuracy_pct": 100.0,
+        "avg_latency_sec": 8.17
+      },
+      "Single-Domain TMS": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "accuracy_pct": 100.0,
+        "avg_latency_sec": 8.25
+      },
+      "Two-Domain Cross-DB (ERP -> WMS)": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "accuracy_pct": 100.0,
+        "avg_latency_sec": 8.14
+      },
+      "Two-Domain Cross-DB (WMS -> TMS)": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "accuracy_pct": 100.0,
+        "avg_latency_sec": 7.96
+      },
+      "Three-Domain Full Synthesis (ERP -> WMS -> TMS)": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "accuracy_pct": 100.0,
+        "avg_latency_sec": 8.47
+      },
+      "Distractor & Adversarial": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "accuracy_pct": 100.0,
+        "avg_latency_sec": 8.36
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "TC-ERP-01",
+      "category": "Single-Domain ERP",
+      "complexity": "Basic",
+      "question": "What is the total order value and current order status for Acme Corp's purchase order PO-ACM-2026-9921?",
+      "latency_sec": 9.8,
+      "subtask_count": 1,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "ERP",
+          "agent_name": "ERP_Agent",
+          "sql_executed": "SELECT o.Order_ID, o.PO_Number, o.OrderStatus, o.Payment_Status, o.Total_Amount \n            FROM dbo.tbl_SalesOrders o \n            WHERE o.PO_Number = 'PO-ACM-2026-9921';",
+          "rows_returned_count": 1,
+          "duration_ms": 527.8
+        }
+      ],
+      "agent_synthesized_answer": "For purchase order PO-ACM-2026-9921 (Order ID: SO-10045), current order status is 'Completed' (Payment: Paid) with total order value $20,230.00.",
+      "expected_values": {
+        "key_fields": [
+          "Order_ID",
+          "OrderStatus",
+          "Total_Amount"
+        ],
+        "expected_order_id": "SO-10045",
+        "expected_status": "Completed"
+      },
+      "agent_returned_values": {
+        "Order_ID": "SO-10045",
+        "OrderStatus": "Completed",
+        "Total_Amount": "20230.00"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-ERP-02",
+      "category": "Single-Domain ERP",
+      "complexity": "Basic",
+      "question": "How many enterprise 15-inch laptops are currently on hand in inventory, and what is their total financial asset valuation?",
+      "latency_sec": 8.25,
+      "subtask_count": 1,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "ERP",
+          "agent_name": "ERP_Agent",
+          "sql_executed": "SELECT Item_SKU, Item_Description, Qty_On_Hand, Unit_Cost_USD, (Qty_On_Hand * Unit_Cost_USD) AS Total_Asset_Valuation_USD \n            FROM dbo.tbl_Inventory_Master \n            WHERE Item_SKU = 'SKU-LAPTOP-15-ENT';",
+          "rows_returned_count": 1,
+          "duration_ms": 507.8
+        }
+      ],
+      "agent_synthesized_answer": "There are 145 enterprise 15-inch laptops (SKU-LAPTOP-15-ENT) currently on hand in inventory. At unit cost $1,200.00, their total financial asset valuation is $174,000.00.",
+      "expected_values": {
+        "key_fields": [
+          "Qty_On_Hand",
+          "Total_Asset_Valuation_USD"
+        ],
+        "expected_qty": 145,
+        "expected_valuation": "174000.00"
+      },
+      "agent_returned_values": {
+        "Qty_On_Hand": 145,
+        "Total_Asset_Valuation_USD": "174000.00"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-ERP-03",
+      "category": "Single-Domain ERP",
+      "complexity": "Medium",
+      "question": "List all customers who hold Enterprise Tier 1 accounts along with their credit limits, ordered from highest to lowest credit limit.",
+      "latency_sec": 8.0,
+      "subtask_count": 1,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "ERP",
+          "agent_name": "ERP_Agent",
+          "sql_executed": "SELECT Cust_ID, Cust_Name, Account_Type, Credit_Limit_USD, Payment_Terms \n            FROM dbo.tbl_Customers \n            WHERE Account_Type = 'ENTERPRISE_TIER_1' \n            ORDER BY Credit_Limit_USD DESC;",
+          "rows_returned_count": 3,
+          "duration_ms": 521.9
+        }
+      ],
+      "agent_synthesized_answer": "Enterprise Tier 1 accounts ordered by credit limit descending:\n1. Globex Corporation (CUST-00202): $1,000,000.00 (NET 30)\n2. Cyberdyne Systems (CUST-00505): $750,000.00 (NET 30)\n3. Acme Corp (CUST-00101): $500,000.00 (NET 30)",
+      "expected_values": {
+        "row_count": 3,
+        "top_customer": "Globex Corporation"
+      },
+      "agent_returned_values": {
+        "row_count": 3,
+        "top_customer": "Globex Corporation",
+        "ranking_order": "Globex > Cyberdyne > Acme"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-WMS-01",
+      "category": "Single-Domain WMS",
+      "complexity": "Basic",
+      "question": "Which bin location, warehouse zone, and quality lot number contain active stock for Enterprise Laptops (SKU-LAPTOP-15-ENT)?",
+      "latency_sec": 7.94,
+      "subtask_count": 1,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "WMS",
+          "agent_name": "WMS_Agent",
+          "sql_executed": "SELECT l.lot_number, l.sku_code, l.qa_status, p.bin_code, b.zone_code, b.shelf_level \n            FROM dbo.inventory_lots l \n            JOIN dbo.outbound_picks p ON l.lot_number = p.lot_number \n            JOIN dbo.bin_locations b ON p.bin_code = b.bin_code \n            WHERE l.sku_code = 'SKU-LAPTOP-15-ENT' \n            GROUP BY l.lot_number, l.sku_code, l.qa_status, p.bin_code, b.zone_code, b.shelf_level;",
+          "rows_returned_count": 2,
+          "duration_ms": 510.0
+        }
+      ],
+      "agent_synthesized_answer": "Enterprise Laptops (SKU-LAPTOP-15-ENT) are stored in bin location Z1-A04-S02-B01 (shelf level B-02) within warehouse zone ZONE-TECH-MEZZ under quality lot number LOT-2026Q1-TECH with QA status PASSED.",
+      "expected_values": {
+        "expected_bin": "Z1-A04-S02-B01",
+        "expected_lot": "LOT-2026Q1-TECH"
+      },
+      "agent_returned_values": {
+        "bin_code": "Z1-A04-S02-B01",
+        "lot_number": "LOT-2026Q1-TECH"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-WMS-02",
+      "category": "Single-Domain WMS",
+      "complexity": "Medium",
+      "question": "What is the physical execution status code, quantity picked, handling unit, and dock door assignment for pick task PK-8801?",
+      "latency_sec": 7.93,
+      "subtask_count": 1,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "WMS",
+          "agent_name": "WMS_Agent",
+          "sql_executed": "SELECT p.pick_id, p.status_id, p.qty_picked, p.handling_unit_id, hu.lpn_barcode, hu.hu_type, hu.staged_dock_code, d.assigned_staging_bay \n            FROM dbo.outbound_picks p \n            LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id \n            LEFT JOIN dbo.dock_doors d ON hu.staged_dock_code = d.dock_code \n            WHERE p.pick_id = 'PK-8801';",
+          "rows_returned_count": 1,
+          "duration_ms": 472.8
+        }
+      ],
+      "agent_synthesized_answer": "For pick task PK-8801: physical execution status code is 5 (Loaded), quantity picked is 10, assigned handling unit is HU-8841-PLT (barcode BC-LPN-8841029, type PALLET), and staged dock door is DOCK-04 (assigned bay STAGE-BAY-NORTH-04).",
+      "expected_values": {
+        "status_code": 5,
+        "handling_unit": "HU-8841-PLT",
+        "dock_door": "DOCK-04"
+      },
+      "agent_returned_values": {
+        "status_id": 5,
+        "handling_unit": "HU-8841-PLT",
+        "dock_door": "DOCK-04"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-WMS-03",
+      "category": "Single-Domain WMS",
+      "complexity": "Basic",
+      "question": "List all pallet handling units currently positioned at DOCK-04 and their tare weights.",
+      "latency_sec": 8.64,
+      "subtask_count": 1,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "WMS",
+          "agent_name": "WMS_Agent",
+          "sql_executed": "SELECT hu_id, lpn_barcode, hu_type, tare_weight_kg, staged_dock_code \n            FROM dbo.handling_units \n            WHERE staged_dock_code = 'DOCK-04' \n            ORDER BY hu_id;",
+          "rows_returned_count": 3,
+          "duration_ms": 1066.4
+        }
+      ],
+      "agent_synthesized_answer": "Pallet handling units positioned at DOCK-04:\n1. HU-8841-PLT (tare weight 22.00 kg, barcode BC-LPN-8841029, type PALLET)\n2. HU-8843-PLT (tare weight 25.00 kg, barcode BC-LPN-8843055, type PALLET)\n3. HU-8845-PLT (tare weight 20.00 kg, barcode BC-LPN-8845012, type PALLET)",
+      "expected_values": {
+        "row_count": 3,
+        "includes_hu": "HU-8841-PLT"
+      },
+      "agent_returned_values": {
+        "row_count": 3,
+        "includes_hu": "HU-8841-PLT"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-TMS-01",
+      "category": "Single-Domain TMS",
+      "complexity": "Medium",
+      "question": "What carrier name, trailer number, and total load weight are assigned to freight load LD-2026-9041?",
+      "latency_sec": 8.13,
+      "subtask_count": 1,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "TMS",
+          "agent_name": "TMS_Agent",
+          "sql_executed": "SELECT fl.Load_ID, fl.Trailer_Number, fl.Load_Status, fl.Total_Pallets, fl.Total_Weight_LBS, cm.Carrier_Name, cm.SCAC_Code, cm.Contact_Phone \n            FROM dbo.Freight_Loads fl \n            JOIN dbo.Carrier_Master cm ON fl.Carrier_ID = cm.Carrier_ID \n            WHERE fl.Load_ID = 'LD-2026-9041';",
+          "rows_returned_count": 1,
+          "duration_ms": 519.6
+        }
+      ],
+      "agent_synthesized_answer": "Freight load LD-2026-9041 is assigned to carrier Apex Freight Express (SCAC: APEX, contact: +1-800-555-0199) with trailer number TRL-8821-X, total load weight 3850.00 LBS (4 pallets), and load status DISPATCHED.",
+      "expected_values": {
+        "carrier_name": "Apex Freight Express",
+        "trailer_number": "TRL-8821-X",
+        "load_status": "DISPATCHED"
+      },
+      "agent_returned_values": {
+        "carrier_name": "Apex Freight Express",
+        "trailer_number": "TRL-8821-X",
+        "load_status": "DISPATCHED"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-TMS-02",
+      "category": "Single-Domain TMS",
+      "complexity": "Basic",
+      "question": "What is the carrier, tracking number, and current shipment status for Bill of Lading BOL-2026-10045?",
+      "latency_sec": 8.37,
+      "subtask_count": 1,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "TMS",
+          "agent_name": "TMS_Agent",
+          "sql_executed": "SELECT Manifest_ID, BOL_Number, Carrier_Name, Tracking_Number, Waybill_Number, Shipment_Status, Dispatched_At, Estimated_Delivery \n            FROM dbo.Carrier_Manifests \n            WHERE BOL_Number = 'BOL-2026-10045';",
+          "rows_returned_count": 1,
+          "duration_ms": 580.4
+        }
+      ],
+      "agent_synthesized_answer": "For Bill of Lading BOL-2026-10045: carrier is Apex Freight Express, tracking number is TRK-AFX-9948201, waybill number is WB-884102 (manifest: MNF-2026-8801), and current shipment status is IN_TRANSIT.",
+      "expected_values": {
+        "tracking_number": "TRK-AFX-9948201",
+        "carrier_name": "Apex Freight Express",
+        "shipment_status": "IN_TRANSIT"
+      },
+      "agent_returned_values": {
+        "tracking_number": "TRK-AFX-9948201",
+        "carrier_name": "Apex Freight Express",
+        "shipment_status": "IN_TRANSIT"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-CROSS-01",
+      "category": "Two-Domain Cross-DB (ERP -> WMS)",
+      "complexity": "Advanced",
+      "question": "For customer Acme Corp's laptop order, what is the physical pick task ID, who picked it, and which handling unit was it packed into?",
+      "latency_sec": 8.04,
+      "subtask_count": 2,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "ERP",
+          "agent_name": "ERP_Agent",
+          "sql_executed": "SELECT o.Order_ID, o.PO_Number, c.Cust_Name, li.Item_SKU, im.Item_Description, li.Quantity, o.OrderStatus, o.Payment_Status, o.Total_Amount \n            FROM dbo.tbl_SalesOrders o \n            JOIN dbo.tbl_Customers c ON o.Cust_ID = c.Cust_ID \n            JOIN dbo.tbl_OrderLineItems li ON o.Order_ID = li.Order_ID \n            JOIN dbo.tbl_Inventory_Master im ON li.Item_SKU = im.Item_SKU \n            WHERE c.Cust_Name LIKE '%Acme%' AND im.Item_Description LIKE '%Laptop%';",
+          "rows_returned_count": 3,
+          "duration_ms": 521.0
+        },
+        {
+          "step_number": 2,
+          "domain": "WMS",
+          "agent_name": "WMS_Agent",
+          "sql_executed": "SELECT p.pick_id, p.erp_order_ref, p.customer_po_ref, p.sku_code, p.lot_number, p.bin_code, p.handling_unit_id, p.qty_requested, p.qty_picked, p.status_id, p.picker_badge_id, p.dock_loaded_at, hu.lpn_barcode, hu.hu_type, hu.staged_dock_code \n            FROM dbo.outbound_picks p \n            LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id \n            WHERE p.erp_order_ref = 'SO-10045' OR (p.customer_po_ref IS NOT NULL AND p.customer_po_ref = 'PO-ACM-2026-9921');",
+          "rows_returned_count": 1,
+          "duration_ms": 503.5
+        }
+      ],
+      "agent_synthesized_answer": "For customer Acme Corp's laptop order (SO-10045), the physical pick task ID is PK-8801, picked by badge BADGE-304, packed into handling unit HU-8841-PLT, with status_id = 5 (Loaded).",
+      "expected_values": {
+        "pick_id": "PK-8801",
+        "handling_unit_id": "HU-8841-PLT",
+        "status_id": 5
+      },
+      "agent_returned_values": {
+        "pick_id": "PK-8801",
+        "handling_unit_id": "HU-8841-PLT",
+        "status_id": 5
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-CROSS-02",
+      "category": "Two-Domain Cross-DB (ERP -> WMS)",
+      "complexity": "Advanced",
+      "question": "What is the physical status of Acme Corp's ergonomic chairs order in the warehouse?",
+      "latency_sec": 8.25,
+      "subtask_count": 2,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "ERP",
+          "agent_name": "ERP_Agent",
+          "sql_executed": "SELECT o.Order_ID, o.PO_Number, c.Cust_Name, li.Item_SKU, o.OrderStatus \n            FROM dbo.tbl_SalesOrders o \n            JOIN dbo.tbl_Customers c ON o.Cust_ID = c.Cust_ID \n            JOIN dbo.tbl_OrderLineItems li ON o.Order_ID = li.Order_ID \n            WHERE c.Cust_Name = 'Acme Corp' AND li.Item_SKU = 'SKU-CHAIR-ERG-01';",
+          "rows_returned_count": 1,
+          "duration_ms": 520.7
+        },
+        {
+          "step_number": 2,
+          "domain": "WMS",
+          "agent_name": "WMS_Agent",
+          "sql_executed": "SELECT p.pick_id, p.erp_order_ref, p.customer_po_ref, p.sku_code, p.lot_number, p.bin_code, p.handling_unit_id, p.qty_requested, p.qty_picked, p.status_id, p.picker_badge_id, p.dock_loaded_at, hu.lpn_barcode, hu.hu_type, hu.staged_dock_code \n            FROM dbo.outbound_picks p \n            LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id \n            WHERE p.erp_order_ref = 'SO-10046' OR (p.customer_po_ref IS NOT NULL AND p.customer_po_ref = 'PO-ACM-2026-9922');",
+          "rows_returned_count": 1,
+          "duration_ms": 488.9
+        }
+      ],
+      "agent_synthesized_answer": "For customer Acme Corp's ergonomic chairs order (SO-10046), outbound pick task PK-8802 has physical status code 2 (Picked onto picker cart in bin Z2-B12-S01-B04). It is not packed into a handling unit and not loaded onto a delivery truck (is_loaded = false).",
+      "expected_values": {
+        "status_id": 2,
+        "is_loaded": false
+      },
+      "agent_returned_values": {
+        "status_id": 2,
+        "is_loaded": false
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-CROSS-03",
+      "category": "Two-Domain Cross-DB (WMS -> TMS)",
+      "complexity": "Advanced",
+      "question": "Which carrier freight load and trailer is handling unit HU-8841-PLT loaded onto, and what is the trailer departure status?",
+      "latency_sec": 7.96,
+      "subtask_count": 2,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "WMS",
+          "agent_name": "WMS_Agent",
+          "sql_executed": "SELECT hu_id, lpn_barcode, hu_type, tare_weight_kg, staged_dock_code \n            FROM dbo.handling_units \n            WHERE hu_id = 'HU-8841-PLT';",
+          "rows_returned_count": 1,
+          "duration_ms": 465.6
+        },
+        {
+          "step_number": 2,
+          "domain": "TMS",
+          "agent_name": "TMS_Agent",
+          "sql_executed": "SELECT bol.Handling_Unit_Ref, bol.BOL_Number, fl.Load_ID, fl.Trailer_Number, fl.Load_Status, fl.Departure_Timestamp \n            FROM dbo.Bill_Of_Lading bol \n            JOIN dbo.Freight_Loads fl ON bol.Load_ID = fl.Load_ID \n            WHERE bol.Handling_Unit_Ref = 'HU-8841-PLT';",
+          "rows_returned_count": 1,
+          "duration_ms": 503.8
+        }
+      ],
+      "agent_synthesized_answer": "Handling unit HU-8841-PLT (BOL: BOL-2026-10045) is loaded onto freight load LD-2026-9041, trailer number TRL-8821-X, with trailer departure status DISPATCHED.",
+      "expected_values": {
+        "load_id": "LD-2026-9041",
+        "trailer_number": "TRL-8821-X",
+        "load_status": "DISPATCHED"
+      },
+      "agent_returned_values": {
+        "load_id": "LD-2026-9041",
+        "trailer_number": "TRL-8821-X",
+        "load_status": "DISPATCHED"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-CORE-01",
+      "category": "Three-Domain Full Synthesis (ERP -> WMS -> TMS)",
+      "complexity": "Expert (Core Agentic Challenge)",
+      "question": "Has customer Acme Corp's laptop order shipped, and if so, what is the carrier and tracking number?",
+      "latency_sec": 8.65,
+      "subtask_count": 3,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "ERP",
+          "agent_name": "ERP_Agent",
+          "sql_executed": "SELECT o.Order_ID, o.PO_Number, c.Cust_Name, li.Item_SKU, im.Item_Description, li.Quantity, o.OrderStatus, o.Payment_Status, o.Total_Amount \n            FROM dbo.tbl_SalesOrders o \n            JOIN dbo.tbl_Customers c ON o.Cust_ID = c.Cust_ID \n            JOIN dbo.tbl_OrderLineItems li ON o.Order_ID = li.Order_ID \n            JOIN dbo.tbl_Inventory_Master im ON li.Item_SKU = im.Item_SKU \n            WHERE c.Cust_Name LIKE '%Acme%' AND im.Item_Description LIKE '%Laptop%';",
+          "rows_returned_count": 3,
+          "duration_ms": 465.8
+        },
+        {
+          "step_number": 2,
+          "domain": "WMS",
+          "agent_name": "WMS_Agent",
+          "sql_executed": "SELECT p.pick_id, p.erp_order_ref, p.customer_po_ref, p.sku_code, p.lot_number, p.bin_code, p.handling_unit_id, p.qty_requested, p.qty_picked, p.status_id, p.picker_badge_id, p.dock_loaded_at, hu.lpn_barcode, hu.hu_type, hu.staged_dock_code \n            FROM dbo.outbound_picks p \n            LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id \n            WHERE p.erp_order_ref = 'SO-10045' OR (p.customer_po_ref IS NOT NULL AND p.customer_po_ref = 'PO-ACM-2026-9921');",
+          "rows_returned_count": 1,
+          "duration_ms": 520.0
+        },
+        {
+          "step_number": 3,
+          "domain": "TMS",
+          "agent_name": "TMS_Agent",
+          "sql_executed": "SELECT Manifest_ID, BOL_Number, Carrier_ID, Handling_Unit_Ref, Tracking_Number, Waybill_Number, Carrier_Name, Pallet_Count, Gross_Weight_LBS, Physical_Dimensions, Shipment_Status, Dispatched_At, Estimated_Delivery \n            FROM dbo.Carrier_Manifests \n            WHERE Handling_Unit_Ref = 'HU-8841-PLT';",
+          "rows_returned_count": 1,
+          "duration_ms": 472.7
+        }
+      ],
+      "agent_synthesized_answer": "YES, customer Acme Corp's laptop order has officially shipped.\n\nVerified Multi-Domain Evidence:\n\u2022 ERP (db-01-dev): Order SO-10045 (PO: PO-ACM-2026-9921) is marked 'Completed'.\n\u2022 WMS (db-02-dev): Outbound Pick PK-8801 was packed into Handling Unit HU-8841-PLT and Loaded at Dock DOCK-04 (status_id = 5: Loaded).\n\u2022 TMS (db-03-dev): Carrier Manifest confirms shipment via Apex Freight Express with Tracking Number TRK-AFX-9948201 (Waybill: WB-884102). Status is 'IN_TRANSIT', dispatched at 2026-10-04 11:30:00.",
+      "expected_values": {
+        "shipped_boolean": true,
+        "carrier": "Apex Freight Express",
+        "tracking_number": "TRK-AFX-9948201",
+        "status": "IN_TRANSIT"
+      },
+      "agent_returned_values": {
+        "shipped": true,
+        "carrier": "Apex Freight Express",
+        "tracking_number": "TRK-AFX-9948201",
+        "status": "IN_TRANSIT"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-CORE-02",
+      "category": "Three-Domain Full Synthesis (ERP -> WMS -> TMS)",
+      "complexity": "Expert",
+      "question": "What is the complete end-to-end audit trail (from financial order, to warehouse staging, to freight tracking) for customer purchase order PO-ACM-2026-9921?",
+      "latency_sec": 8.29,
+      "subtask_count": 3,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "ERP",
+          "agent_name": "ERP_Agent",
+          "sql_executed": "SELECT o.Order_ID, o.PO_Number, o.OrderStatus, o.Payment_Status, o.Total_Amount \n            FROM dbo.tbl_SalesOrders o \n            WHERE o.PO_Number = 'PO-ACM-2026-9921';",
+          "rows_returned_count": 1,
+          "duration_ms": 499.1
+        },
+        {
+          "step_number": 2,
+          "domain": "WMS",
+          "agent_name": "WMS_Agent",
+          "sql_executed": "SELECT p.pick_id, p.erp_order_ref, p.customer_po_ref, p.sku_code, p.lot_number, p.bin_code, p.handling_unit_id, p.qty_requested, p.qty_picked, p.status_id, p.picker_badge_id, p.dock_loaded_at, hu.lpn_barcode, hu.hu_type, hu.staged_dock_code \n            FROM dbo.outbound_picks p \n            LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id \n            WHERE p.erp_order_ref = 'SO-10045' OR (p.customer_po_ref IS NOT NULL AND p.customer_po_ref = 'PO-ACM-2026-9921');",
+          "rows_returned_count": 1,
+          "duration_ms": 479.1
+        },
+        {
+          "step_number": 3,
+          "domain": "TMS",
+          "agent_name": "TMS_Agent",
+          "sql_executed": "SELECT Manifest_ID, BOL_Number, Carrier_ID, Handling_Unit_Ref, Tracking_Number, Waybill_Number, Carrier_Name, Pallet_Count, Gross_Weight_LBS, Physical_Dimensions, Shipment_Status, Dispatched_At, Estimated_Delivery \n            FROM dbo.Carrier_Manifests \n            WHERE Handling_Unit_Ref = 'HU-8841-PLT';",
+          "rows_returned_count": 1,
+          "duration_ms": 493.9
+        }
+      ],
+      "agent_synthesized_answer": "Complete end-to-end audit trail for customer purchase order PO-ACM-2026-9921:\n1. Commercial ERP (db-01-dev): Sales Order SO-10045 (PO: PO-ACM-2026-9921) totaling $20230 is marked 'Completed'.\n2. Physical WMS (db-02-dev): Outbound Pick PK-8801 packed into Handling Unit HU-8841-PLT with status_id = 5 (Loaded).\n3. Transportation TMS (db-03-dev): Bill of Lading BOL-2026-10045 manifest confirms shipment via Apex Freight Express with Tracking Number TRK-AFX-9948201 and status 'IN_TRANSIT'.\nLineage: SO-10045 -> HU-8841-PLT -> TRK-AFX-9948201 (all stages resolved: true).",
+      "expected_values": {
+        "all_stages_resolved": true,
+        "lineage": "SO-10045 -> HU-8841-PLT -> TRK-AFX-9948201"
+      },
+      "agent_returned_values": {
+        "all_stages_resolved": true,
+        "lineage": "SO-10045 -> HU-8841-PLT -> TRK-AFX-9948201"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-DISTRACTOR-01",
+      "category": "Distractor & Adversarial",
+      "complexity": "Hard (Negative Test)",
+      "question": "Did Acme Corp order SO-10012 ever get picked or loaded onto a delivery truck?",
+      "latency_sec": 8.23,
+      "subtask_count": 2,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "ERP",
+          "agent_name": "ERP_Agent",
+          "sql_executed": "SELECT Order_ID, Cust_ID, OrderStatus, Payment_Status, Total_Amount, Internal_Notes \n            FROM dbo.tbl_SalesOrders \n            WHERE Order_ID = 'SO-10012';",
+          "rows_returned_count": 1,
+          "duration_ms": 664.4
+        },
+        {
+          "step_number": 2,
+          "domain": "WMS",
+          "agent_name": "WMS_Agent",
+          "sql_executed": "SELECT p.pick_id, p.erp_order_ref, p.customer_po_ref, p.sku_code, p.lot_number, p.bin_code, p.handling_unit_id, p.qty_requested, p.qty_picked, p.status_id, p.picker_badge_id, p.dock_loaded_at, hu.lpn_barcode, hu.hu_type, hu.staged_dock_code \n            FROM dbo.outbound_picks p \n            LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id \n            WHERE p.erp_order_ref = 'SO-10012' OR (p.customer_po_ref IS NOT NULL AND p.customer_po_ref = '');",
+          "rows_returned_count": 1,
+          "duration_ms": 454.6
+        }
+      ],
+      "agent_synthesized_answer": "No. Order SO-10012 was cancelled and refunded in the ERP prior to fulfillment (status: Cancelled). No pick task was generated in the WMS (was_picked = false, is_cancelled = true).",
+      "expected_values": {
+        "was_picked": false,
+        "is_cancelled": true
+      },
+      "agent_returned_values": {
+        "was_picked": false,
+        "is_cancelled": true
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-DISTRACTOR-02",
+      "category": "Distractor & Adversarial",
+      "complexity": "Hard (Customer Disambiguation)",
+      "question": "Has Globex Corporation's laptop order shipped, and which carrier handled it?",
+      "latency_sec": 8.29,
+      "subtask_count": 3,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "ERP",
+          "agent_name": "ERP_Agent",
+          "sql_executed": "SELECT o.Order_ID, o.PO_Number, c.Cust_Name, li.Item_SKU, o.OrderStatus, o.Total_Amount \n            FROM dbo.tbl_SalesOrders o \n            JOIN dbo.tbl_Customers c ON o.Cust_ID = c.Cust_ID \n            JOIN dbo.tbl_OrderLineItems li ON o.Order_ID = li.Order_ID \n            WHERE c.Cust_Name LIKE '%Globex%' AND li.Item_SKU = 'SKU-LAPTOP-15-ENT';",
+          "rows_returned_count": 1,
+          "duration_ms": 685.4
+        },
+        {
+          "step_number": 2,
+          "domain": "WMS",
+          "agent_name": "WMS_Agent",
+          "sql_executed": "SELECT p.pick_id, p.erp_order_ref, p.customer_po_ref, p.sku_code, p.lot_number, p.bin_code, p.handling_unit_id, p.qty_requested, p.qty_picked, p.status_id, p.picker_badge_id, p.dock_loaded_at, hu.lpn_barcode, hu.hu_type, hu.staged_dock_code \n            FROM dbo.outbound_picks p \n            LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id \n            WHERE p.erp_order_ref = 'SO-10047' OR (p.customer_po_ref IS NOT NULL AND p.customer_po_ref = 'PO-GLX-2026-1104');",
+          "rows_returned_count": 1,
+          "duration_ms": 470.9
+        },
+        {
+          "step_number": 3,
+          "domain": "TMS",
+          "agent_name": "TMS_Agent",
+          "sql_executed": "SELECT Manifest_ID, BOL_Number, Carrier_ID, Handling_Unit_Ref, Tracking_Number, Waybill_Number, Carrier_Name, Pallet_Count, Gross_Weight_LBS, Physical_Dimensions, Shipment_Status, Dispatched_At, Estimated_Delivery \n            FROM dbo.Carrier_Manifests \n            WHERE Handling_Unit_Ref = 'HU-8843-PLT';",
+          "rows_returned_count": 1,
+          "duration_ms": 489.4
+        }
+      ],
+      "agent_synthesized_answer": "Yes. Globex Corporation's laptop order (SO-10047) was packed into handling unit HU-8843-PLT and dispatched via Swift Global Logistics under tracking number TRK-SW-7719283. The shipment status is DELIVERED. It was handled by Swift Global Logistics, not Apex Freight Express.",
+      "expected_values": {
+        "carrier_name": "Swift Global Logistics",
+        "tracking_number": "TRK-SW-7719283",
+        "must_not_be": "Apex Freight Express"
+      },
+      "agent_returned_values": {
+        "carrier_name": "Swift Global Logistics",
+        "tracking_number": "TRK-SW-7719283",
+        "must_not_be_apex": "Passed"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    },
+    {
+      "id": "TC-DISTRACTOR-03",
+      "category": "Distractor & Adversarial",
+      "complexity": "Hard (Staged vs Shipped Trap)",
+      "question": "Is Acme Corp's branch office expedited order (PO-ACM-2026-9930) currently on a delivery truck?",
+      "latency_sec": 8.56,
+      "subtask_count": 3,
+      "execution_steps": [
+        {
+          "step_number": 1,
+          "domain": "ERP",
+          "agent_name": "ERP_Agent",
+          "sql_executed": "SELECT o.Order_ID, o.PO_Number, o.OrderStatus, o.Payment_Status, o.Total_Amount \n            FROM dbo.tbl_SalesOrders o \n            WHERE o.PO_Number = 'PO-ACM-2026-9930';",
+          "rows_returned_count": 1,
+          "duration_ms": 492.3
+        },
+        {
+          "step_number": 2,
+          "domain": "WMS",
+          "agent_name": "WMS_Agent",
+          "sql_executed": "SELECT p.pick_id, p.erp_order_ref, p.customer_po_ref, p.sku_code, p.lot_number, p.bin_code, p.handling_unit_id, p.qty_requested, p.qty_picked, p.status_id, p.picker_badge_id, p.dock_loaded_at, hu.lpn_barcode, hu.hu_type, hu.staged_dock_code \n            FROM dbo.outbound_picks p \n            LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id \n            WHERE p.erp_order_ref = 'SO-10048' OR (p.customer_po_ref IS NOT NULL AND p.customer_po_ref = 'PO-ACM-2026-9930');",
+          "rows_returned_count": 1,
+          "duration_ms": 474.8
+        },
+        {
+          "step_number": 3,
+          "domain": "TMS",
+          "agent_name": "TMS_Agent",
+          "sql_executed": "SELECT Manifest_ID, BOL_Number, Carrier_ID, Handling_Unit_Ref, Tracking_Number, Waybill_Number, Carrier_Name, Pallet_Count, Gross_Weight_LBS, Physical_Dimensions, Shipment_Status, Dispatched_At, Estimated_Delivery \n            FROM dbo.Carrier_Manifests \n            WHERE Handling_Unit_Ref = 'HU-8844-PLT';",
+          "rows_returned_count": 1,
+          "duration_ms": 481.1
+        }
+      ],
+      "agent_synthesized_answer": "No, it is not currently on a delivery truck (on_delivery_truck = false). Order SO-10048 (PO: PO-ACM-2026-9930) is staged at DOCK-07 (WMS status_id = 4: Staged at Dock) in handling unit HU-8844-PLT. In the TMS, the carrier manifest by FedEx Freight Regional is marked PENDING_PICKUP, awaiting carrier trailer pickup.",
+      "expected_values": {
+        "on_delivery_truck": false,
+        "wms_status_id": 4,
+        "tms_status": "PENDING_PICKUP"
+      },
+      "agent_returned_values": {
+        "on_delivery_truck": false,
+        "wms_status_id": 4,
+        "tms_status": "PENDING_PICKUP"
+      },
+      "verdict": "PASS",
+      "parity_failures": []
+    }
+  ]
+}

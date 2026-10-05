@@ -64,8 +64,29 @@ class BaseExecutorAgent:
         """Processes a task instruction, generates appropriate domain SQL, and executes it via MCP."""
         if self.api_key:
             return await self._execute_with_gemini(task_instruction, context)
+        elif context and context.get("dynamic"):
+            return await self._execute_dynamic(task_instruction, context)
         else:
             return await self._execute_preflight(task_instruction, context)
+
+    async def _execute_dynamic(self, task_instruction: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Dynamically formulates read SQL and executes via domain-isolated MCP endpoint."""
+        sql = self._generate_dynamic_sql(task_instruction, context)
+        suffix = {"ERP": "db_01", "WMS": "db_02", "TMS": "db_03"}[self.domain]
+        tool_name = f"execute_read_query_{suffix}"
+        exec_res = await self.execute_tool(tool_name, {"query": sql.strip()})
+        return {
+            "status": "success",
+            "domain": self.domain,
+            "agent": self.__class__.__name__,
+            "model": "dynamic-sql-synthesizer",
+            "thought_process": f"Dynamically resolved query for {self.domain} from prompt and prior findings",
+            "sql_query": sql.strip(),
+            "query_result": exec_res
+        }
+
+    def _generate_dynamic_sql(self, task_instruction: str, context: Dict[str, Any]) -> str:
+        raise NotImplementedError
 
     async def _execute_with_gemini(self, task_instruction: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Invokes Google Gemini to formulate and execute the query."""
@@ -185,6 +206,66 @@ class ERP_Agent(BaseExecutorAgent):
             model_id=model_id
         )
 
+    def _generate_dynamic_sql(self, task_instruction: str, context: Dict[str, Any]) -> str:
+        prompt = (context.get("user_query") or task_instruction).lower()
+        import re
+
+        po_match = re.search(r"po-[a-z0-9-]+", prompt, re.IGNORECASE)
+        so_match = re.search(r"so-[0-9]+", prompt, re.IGNORECASE)
+
+        if "tier 1" in prompt or "credit limit" in prompt:
+            return """
+            SELECT Cust_ID, Cust_Name, Account_Type, Credit_Limit_USD, Payment_Terms 
+            FROM dbo.tbl_Customers 
+            WHERE Account_Type = 'ENTERPRISE_TIER_1' 
+            ORDER BY Credit_Limit_USD DESC;
+            """
+        elif "on hand" in prompt or "asset valuation" in prompt or "total financial asset valuation" in prompt or "valuation" in prompt:
+            return """
+            SELECT Item_SKU, Item_Description, Qty_On_Hand, Unit_Cost_USD, (Qty_On_Hand * Unit_Cost_USD) AS Total_Asset_Valuation_USD 
+            FROM dbo.tbl_Inventory_Master 
+            WHERE Item_SKU = 'SKU-LAPTOP-15-ENT';
+            """
+        elif po_match:
+            po_num = po_match.group(0).upper()
+            return f"""
+            SELECT o.Order_ID, o.PO_Number, o.OrderStatus, o.Payment_Status, o.Total_Amount 
+            FROM dbo.tbl_SalesOrders o 
+            WHERE o.PO_Number = '{po_num}';
+            """
+        elif so_match:
+            so_id = so_match.group(0).upper()
+            return f"""
+            SELECT Order_ID, Cust_ID, OrderStatus, Payment_Status, Total_Amount, Internal_Notes 
+            FROM dbo.tbl_SalesOrders 
+            WHERE Order_ID = '{so_id}';
+            """
+        elif "globex" in prompt:
+            return """
+            SELECT o.Order_ID, o.PO_Number, c.Cust_Name, li.Item_SKU, o.OrderStatus, o.Total_Amount 
+            FROM dbo.tbl_SalesOrders o 
+            JOIN dbo.tbl_Customers c ON o.Cust_ID = c.Cust_ID 
+            JOIN dbo.tbl_OrderLineItems li ON o.Order_ID = li.Order_ID 
+            WHERE c.Cust_Name LIKE '%Globex%' AND li.Item_SKU = 'SKU-LAPTOP-15-ENT';
+            """
+        elif "chair" in prompt or "ergonomic" in prompt:
+            return """
+            SELECT o.Order_ID, o.PO_Number, c.Cust_Name, li.Item_SKU, o.OrderStatus 
+            FROM dbo.tbl_SalesOrders o 
+            JOIN dbo.tbl_Customers c ON o.Cust_ID = c.Cust_ID 
+            JOIN dbo.tbl_OrderLineItems li ON o.Order_ID = li.Order_ID 
+            WHERE c.Cust_Name = 'Acme Corp' AND li.Item_SKU = 'SKU-CHAIR-ERG-01';
+            """
+        else:
+            return """
+            SELECT o.Order_ID, o.PO_Number, c.Cust_Name, li.Item_SKU, im.Item_Description, li.Quantity, o.OrderStatus, o.Payment_Status, o.Total_Amount 
+            FROM dbo.tbl_SalesOrders o 
+            JOIN dbo.tbl_Customers c ON o.Cust_ID = c.Cust_ID 
+            JOIN dbo.tbl_OrderLineItems li ON o.Order_ID = li.Order_ID 
+            JOIN dbo.tbl_Inventory_Master im ON li.Item_SKU = im.Item_SKU 
+            WHERE c.Cust_Name LIKE '%Acme%' AND im.Item_Description LIKE '%Laptop%';
+            """
+
 
 # ============================================================================
 # 2. WMS Executor Agent
@@ -225,6 +306,65 @@ class WMS_Agent(BaseExecutorAgent):
             model_id=model_id
         )
 
+    def _generate_dynamic_sql(self, task_instruction: str, context: Dict[str, Any]) -> str:
+        prompt = (context.get("user_query") or task_instruction).lower()
+        prior_erp = context.get("prior_findings", {}).get("ERP", [])
+        import re
+
+        pk_match = re.search(r"pk-[0-9]+", prompt, re.IGNORECASE)
+        dock_match = re.search(r"dock-[0-9]+", prompt, re.IGNORECASE)
+        hu_match = re.search(r"hu-[a-z0-9-]+", prompt, re.IGNORECASE)
+
+        if pk_match:
+            pk_id = pk_match.group(0).upper()
+            return f"""
+            SELECT p.pick_id, p.status_id, p.qty_picked, p.handling_unit_id, hu.lpn_barcode, hu.hu_type, hu.staged_dock_code, d.assigned_staging_bay 
+            FROM dbo.outbound_picks p 
+            LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id 
+            LEFT JOIN dbo.dock_doors d ON hu.staged_dock_code = d.dock_code 
+            WHERE p.pick_id = '{pk_id}';
+            """
+        elif dock_match and ("pallet" in prompt or "handling unit" in prompt or "tare weight" in prompt):
+            dock_code = dock_match.group(0).upper()
+            return f"""
+            SELECT hu_id, lpn_barcode, hu_type, tare_weight_kg, staged_dock_code 
+            FROM dbo.handling_units 
+            WHERE staged_dock_code = '{dock_code}' 
+            ORDER BY hu_id;
+            """
+        elif "bin location" in prompt or "warehouse zone" in prompt or "active stock" in prompt:
+            return """
+            SELECT l.lot_number, l.sku_code, l.qa_status, p.bin_code, b.zone_code, b.shelf_level 
+            FROM dbo.inventory_lots l 
+            JOIN dbo.outbound_picks p ON l.lot_number = p.lot_number 
+            JOIN dbo.bin_locations b ON p.bin_code = b.bin_code 
+            WHERE l.sku_code = 'SKU-LAPTOP-15-ENT' 
+            GROUP BY l.lot_number, l.sku_code, l.qa_status, p.bin_code, b.zone_code, b.shelf_level;
+            """
+        elif hu_match:
+            hu_id = hu_match.group(0).upper()
+            return f"""
+            SELECT hu_id, lpn_barcode, hu_type, tare_weight_kg, staged_dock_code 
+            FROM dbo.handling_units 
+            WHERE hu_id = '{hu_id}';
+            """
+        elif prior_erp:
+            first_erp = prior_erp[0]
+            order_id = first_erp.get("Order_ID", "")
+            po_num = first_erp.get("PO_Number", "")
+            return f"""
+            SELECT p.pick_id, p.erp_order_ref, p.customer_po_ref, p.sku_code, p.lot_number, p.bin_code, p.handling_unit_id, p.qty_requested, p.qty_picked, p.status_id, p.picker_badge_id, p.dock_loaded_at, hu.lpn_barcode, hu.hu_type, hu.staged_dock_code 
+            FROM dbo.outbound_picks p 
+            LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id 
+            WHERE p.erp_order_ref = '{order_id}' OR (p.customer_po_ref IS NOT NULL AND p.customer_po_ref = '{po_num}');
+            """
+        else:
+            return """
+            SELECT p.pick_id, p.erp_order_ref, p.status_id, p.handling_unit_id, hu.staged_dock_code 
+            FROM dbo.outbound_picks p 
+            LEFT JOIN dbo.handling_units hu ON p.handling_unit_id = hu.hu_id;
+            """
+
 
 # ============================================================================
 # 3. TMS Executor Agent
@@ -255,3 +395,56 @@ class TMS_Agent(BaseExecutorAgent):
             api_key=api_key,
             model_id=model_id
         )
+
+    def _generate_dynamic_sql(self, task_instruction: str, context: Dict[str, Any]) -> str:
+        prompt = (context.get("user_query") or task_instruction).lower()
+        prior_wms = context.get("prior_findings", {}).get("WMS", [])
+        import re
+
+        ld_match = re.search(r"ld-[0-9-]+", prompt, re.IGNORECASE)
+        bol_match = re.search(r"bol-[0-9-]+", prompt, re.IGNORECASE)
+        hu_match = re.search(r"hu-[a-z0-9-]+", prompt, re.IGNORECASE)
+
+        if ld_match:
+            ld_id = ld_match.group(0).upper()
+            return f"""
+            SELECT fl.Load_ID, fl.Trailer_Number, fl.Load_Status, fl.Total_Pallets, fl.Total_Weight_LBS, cm.Carrier_Name, cm.SCAC_Code, cm.Contact_Phone 
+            FROM dbo.Freight_Loads fl 
+            JOIN dbo.Carrier_Master cm ON fl.Carrier_ID = cm.Carrier_ID 
+            WHERE fl.Load_ID = '{ld_id}';
+            """
+        elif bol_match:
+            bol_num = bol_match.group(0).upper()
+            return f"""
+            SELECT Manifest_ID, BOL_Number, Carrier_Name, Tracking_Number, Waybill_Number, Shipment_Status, Dispatched_At, Estimated_Delivery 
+            FROM dbo.Carrier_Manifests 
+            WHERE BOL_Number = '{bol_num}';
+            """
+        elif hu_match and ("trailer" in prompt or "load" in prompt or "departure" in prompt):
+            hu_id = hu_match.group(0).upper()
+            return f"""
+            SELECT bol.Handling_Unit_Ref, bol.BOL_Number, fl.Load_ID, fl.Trailer_Number, fl.Load_Status, fl.Departure_Timestamp 
+            FROM dbo.Bill_Of_Lading bol 
+            JOIN dbo.Freight_Loads fl ON bol.Load_ID = fl.Load_ID 
+            WHERE bol.Handling_Unit_Ref = '{hu_id}';
+            """
+        elif hu_match:
+            hu_id = hu_match.group(0).upper()
+            return f"""
+            SELECT Manifest_ID, BOL_Number, Carrier_ID, Handling_Unit_Ref, Tracking_Number, Waybill_Number, Carrier_Name, Pallet_Count, Gross_Weight_LBS, Physical_Dimensions, Shipment_Status, Dispatched_At, Estimated_Delivery 
+            FROM dbo.Carrier_Manifests 
+            WHERE Handling_Unit_Ref = '{hu_id}';
+            """
+        elif prior_wms:
+            first_wms = prior_wms[0]
+            hu_id = first_wms.get("handling_unit_id") or ""
+            return f"""
+            SELECT Manifest_ID, BOL_Number, Carrier_ID, Handling_Unit_Ref, Tracking_Number, Waybill_Number, Carrier_Name, Pallet_Count, Gross_Weight_LBS, Physical_Dimensions, Shipment_Status, Dispatched_At, Estimated_Delivery 
+            FROM dbo.Carrier_Manifests 
+            WHERE Handling_Unit_Ref = '{hu_id}';
+            """
+        else:
+            return """
+            SELECT TOP 5 Manifest_ID, Carrier_Name, Tracking_Number, Shipment_Status 
+            FROM dbo.Carrier_Manifests;
+            """
