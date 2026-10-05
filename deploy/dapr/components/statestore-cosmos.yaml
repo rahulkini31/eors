@@ -1,0 +1,31 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: agent-statestore
+  namespace: default
+spec:
+  type: state.azure.cosmosdb
+  version: v1
+  metadata:
+    # Cosmos DB Endpoint URL (e.g. https://cosmos-eors-dev.documents.azure.com:443/)
+    - name: url
+      value: "https://{COSMOS_ACCOUNT_NAME}.documents.azure.com:443/"
+    # Target Database & Container for MAF Actor Memory
+    - name: database
+      value: "AgentStateDB"
+    - name: collection
+      value: "ActorMemory"
+    # Partition Key for isolated per-actor state partitioning
+    - name: partitionKey
+      value: "/id"
+    # Entra ID Authentication using User-Assigned Managed Identity (UAMI)
+    - name: azureClientId
+      value: "{UAMI_CLIENT_ID}"
+    # TTL and consistency settings
+    - name: defaultTimeToLiveInSeconds
+      value: "2592000" # 30 days retention for time-travel debugging
+scopes:
+  - agent-planner
+  - agent-erp
+  - agent-wms
+  - agent-tms

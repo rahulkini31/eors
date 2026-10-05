@@ -1,0 +1,35 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: agent-pubsub
+  namespace: default
+spec:
+  type: pubsub.azure.servicebus.topics
+  version: v1
+  metadata:
+    # Service Bus Namespace FQDN (e.g. sb-eors-dev.servicebus.windows.net)
+    - name: namespaceName
+      value: "{SERVICE_BUS_NAMESPACE}.servicebus.windows.net"
+    # Entra ID Authentication using User-Assigned Managed Identity (UAMI)
+    - name: azureClientId
+      value: "{UAMI_CLIENT_ID}"
+    # Resilience & Delivery Guardrails
+    - name: maxDeliveryCount
+      value: "5"
+    - name: lockDurationInSeconds
+      value: "60"
+    - name: defaultMessageTimeToLiveInSeconds
+      value: "86400"
+    - name: autoDeleteOnIdleInSeconds
+      value: "0"
+    # Dead Letter Queue enabled for failed A2A messages
+    - name: enableDeadLettering
+      value: "true"
+    # Topic and Subscription naming conventions
+    - name: maxActiveMessages
+      value: "100"
+scopes:
+  - agent-planner
+  - agent-erp
+  - agent-wms
+  - agent-tms

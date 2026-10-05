@@ -1,0 +1,26 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: agent-statestore-redis
+  namespace: default
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+    # Azure Cache for Redis Host and Port
+    - name: redisHost
+      value: "{REDIS_NAME}.redis.cache.windows.net:6380"
+    # Entra ID Authentication or Primary Secret
+    - name: redisPassword
+      value: "{REDIS_PASSWORD}"
+    - name: enableTLS
+      value: "true"
+    - name: maxRetries
+      value: "5"
+    - name: maxRetryBackoff
+      value: "3000"
+scopes:
+  - agent-planner
+  - agent-erp
+  - agent-wms
+  - agent-tms
