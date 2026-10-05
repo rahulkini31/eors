@@ -1,30 +1,33 @@
 """Real-Time Event Streaming Infrastructure for Multi-Agent Swarm.
-Uses ContextVar to isolate per-request streaming event queues for Server-Sent Events (SSE).
+Broadcasts structured actor events from the MAF runtime loop to connected frontend SSE clients.
 """
 
 import asyncio
-import contextvars
 import time
-from typing import Any, Dict, Optional
-
-
-_stream_queue_var: contextvars.ContextVar[Optional[asyncio.Queue]] = contextvars.ContextVar(
-    "agent_stream_queue", default=None
-)
+from typing import Any, Dict, List, Optional
 
 
 class AgentEventStreamer:
     """Publishes structured real-time events from MAF actors to connected frontend clients."""
 
-    @classmethod
-    def set_queue(cls, queue: Optional[asyncio.Queue]):
-        """Sets the active streaming queue for the current async execution context."""
-        _stream_queue_var.set(queue)
+    _active_queues: List[asyncio.Queue] = []
+    _session_queues: Dict[str, asyncio.Queue] = {}
 
     @classmethod
-    def get_queue(cls) -> Optional[asyncio.Queue]:
-        """Gets the active streaming queue for the current async execution context."""
-        return _stream_queue_var.get()
+    def register_queue(cls, queue: asyncio.Queue, session_id: Optional[str] = None):
+        """Registers an SSE streaming queue."""
+        if queue not in cls._active_queues:
+            cls._active_queues.append(queue)
+        if session_id:
+            cls._session_queues[session_id] = queue
+
+    @classmethod
+    def unregister_queue(cls, queue: asyncio.Queue, session_id: Optional[str] = None):
+        """Unregisters an SSE streaming queue."""
+        if queue in cls._active_queues:
+            cls._active_queues.remove(queue)
+        if session_id:
+            cls._session_queues.pop(session_id, None)
 
     @classmethod
     async def emit(
@@ -33,17 +36,28 @@ class AgentEventStreamer:
         agent: str,
         message: str,
         data: Optional[Dict[str, Any]] = None,
-        database: Optional[str] = None
+        database: Optional[str] = None,
+        session_id: Optional[str] = None
     ):
-        """Asynchronously emits an event to the active SSE queue if one is registered."""
-        queue = _stream_queue_var.get()
-        if queue is not None:
-            payload = {
-                "type": event_type,
-                "agent": agent,
-                "message": message,
-                "database": database,
-                "data": data or {},
-                "timestamp": round(time.time(), 3)
-            }
-            await queue.put(payload)
+        """Asynchronously emits an event to the registered SSE queues."""
+        payload = {
+            "type": event_type,
+            "agent": agent,
+            "message": message,
+            "database": database,
+            "data": data or {},
+            "timestamp": round(time.time(), 3)
+        }
+
+        # Deliver to session-specific queue if specified, otherwise broadcast to active listeners
+        target_queues = []
+        if session_id and session_id in cls._session_queues:
+            target_queues = [cls._session_queues[session_id]]
+        else:
+            target_queues = list(cls._active_queues)
+
+        for q in target_queues:
+            try:
+                await q.put(payload)
+            except Exception:
+                pass

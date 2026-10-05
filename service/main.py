@@ -151,8 +151,8 @@ async def stream_query(query: str, request: Request):
     queue: asyncio.Queue = asyncio.Queue()
 
     async def event_generator():
-        # Bind queue in contextvars
-        AgentEventStreamer.set_queue(queue)
+        # Register queue with AgentEventStreamer for the entire runtime loop
+        AgentEventStreamer.register_queue(queue)
         recorder = get_trajectory_recorder()
         recorder.clear()
 
@@ -228,13 +228,15 @@ async def stream_query(query: str, request: Request):
 
         task = asyncio.create_task(run_swarm_pipeline())
 
-        while True:
-            event = await queue.get()
-            if event is None:
-                break
-            yield f"data: {json.dumps(event)}\n\n"
-
-        await task
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                yield f"data: {json.dumps(event)}\n\n"
+        finally:
+            AgentEventStreamer.unregister_queue(queue)
+            await task
 
     return StreamingResponse(
         event_generator(),
