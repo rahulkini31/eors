@@ -217,6 +217,8 @@ Guidelines:
 3. If an order was cancelled in ERP and not picked in WMS, state clearly that it was cancelled prior to fulfillment and never picked.
 4. If an order is staged at a dock door awaiting carrier pickup, clearly state that it is staged at the dock and NOT loaded on a delivery truck.
 5. If an order is shipped, state YES and provide the carrier and tracking number.
+6. If an order is in progress in the warehouse (e.g., status_id = 2, 'Picked onto cart'), explicitly state that it has status_id 2, has been picked onto a cart, and confirm that it is NOT loaded into a trailer or truck.
+7. When reporting customer tiers or rankings, present them in the ranked descending order returned by the queries.
 """
             synth_resp = await client.aio.models.generate_content(
                 model=self.planner.model_id,

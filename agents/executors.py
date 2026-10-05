@@ -101,8 +101,12 @@ FULL DOMAIN SCHEMA (TABLES & COLUMNS):
 INSTRUCTIONS FOR SQL FORMULATION:
 1. Formulate a precise, read-only SQL query (SELECT / CTE) matching the task objective.
 2. Filter strictly by entities or identifiers passed in the task or prior findings (e.g. order IDs, PO numbers, customer names, SKUs, handling units, load IDs).
-3. Select all relevant fields needed to answer the question or pass downstream.
-4. Output JSON matching:
+3. If an upstream agent found an identifier (such as an Order_ID like 'SO-10045', PO_Number, handling_unit_id like 'HU-8841-PLT', or BOL_Number), use it in your WHERE clause to link cross-domain records.
+4. Always include primary status, lifecycle, and identifier columns in your SELECT clause (e.g. Load_Status, Shipment_Status, OrderStatus, status_id, Line_Status, door_status, qa_status, Trailer_Number, Carrier_Name, etc.) alongside the requested attributes so full state is captured.
+5. Robust keyword matching: When matching multi-word product names, titles, or descriptions (e.g. 'ergonomic chairs', 'enterprise laptop'), do NOT assume adjacent words or strict exact string equality. Use tokenized wildcards or separate conditions, e.g. (Item_Description LIKE '%ergonomic%' AND Item_Description LIKE '%chair%') or Item_Description LIKE '%ergonomic%chair%'.
+6. Normalize categorical values and codes: Database categorical values, tiers, and status codes often use uppercase and underscores (e.g., 'ENTERPRISE_TIER_1' for 'Enterprise Tier 1', 'IN_TRANSIT' for 'in transit', 'DISPATCHED' for 'dispatched'). When filtering text categories or status fields, account for underscore vs space variants, e.g., REPLACE(Account_Type, '_', ' ') LIKE '%Enterprise Tier 1%' or (Account_Type LIKE '%ENTERPRISE%' AND Account_Type LIKE '%1%').
+7. When asked for rankings, highest/lowest metrics, credit limits, or valuations, sort by the relevant numeric/metric column descending (ORDER BY col DESC) and return all matching records.
+8. Output JSON matching:
 {{
   "thought_process": "Explanation of query rationale, tables chosen, and filter conditions",
   "tool_to_call": "execute_read_query_db_XX",
