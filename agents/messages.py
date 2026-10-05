@@ -9,6 +9,7 @@ class UserQueryMessage(BaseModel):
     """Inbound user question directed to the Gemini Planner."""
     query: str
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    trace_context: Dict[str, str] = Field(default_factory=dict)
 
 
 class ERPOrderLookupRequest(BaseModel):
@@ -17,6 +18,7 @@ class ERPOrderLookupRequest(BaseModel):
     item_query: str
     correlation_id: str
     prompt_context: str = ""
+    trace_context: Dict[str, str] = Field(default_factory=dict)
 
 
 class ERPOrderLookupResponse(BaseModel):
@@ -31,6 +33,7 @@ class ERPOrderLookupResponse(BaseModel):
     raw_records: List[Dict[str, Any]] = Field(default_factory=list)
     correlation_id: str = ""
     error: Optional[str] = None
+    trace_context: Dict[str, str] = Field(default_factory=dict)
 
 
 class WMSExecutionLookupRequest(BaseModel):
@@ -39,6 +42,7 @@ class WMSExecutionLookupRequest(BaseModel):
     customer_po_ref: Optional[str] = None
     correlation_id: str = ""
     prompt_question: str = ""
+    trace_context: Dict[str, str] = Field(default_factory=dict)
 
 
 class WMSExecutionLookupResponse(BaseModel):
@@ -51,6 +55,7 @@ class WMSExecutionLookupResponse(BaseModel):
     raw_records: List[Dict[str, Any]] = Field(default_factory=list)
     correlation_id: str = ""
     error: Optional[str] = None
+    trace_context: Dict[str, str] = Field(default_factory=dict)
 
 
 class TMSDispatchLookupRequest(BaseModel):
@@ -58,6 +63,7 @@ class TMSDispatchLookupRequest(BaseModel):
     handling_unit_ref: str
     correlation_id: str = ""
     prompt_question: str = ""
+    trace_context: Dict[str, str] = Field(default_factory=dict)
 
 
 class TMSDispatchLookupResponse(BaseModel):
@@ -72,6 +78,7 @@ class TMSDispatchLookupResponse(BaseModel):
     raw_records: List[Dict[str, Any]] = Field(default_factory=list)
     correlation_id: str = ""
     error: Optional[str] = None
+    trace_context: Dict[str, str] = Field(default_factory=dict)
 
 
 class SwarmResolutionResponse(BaseModel):
@@ -82,3 +89,4 @@ class SwarmResolutionResponse(BaseModel):
     is_shipped: bool
     tracking_number: Optional[str] = None
     session_id: str
+    trace_id: Optional[str] = None
