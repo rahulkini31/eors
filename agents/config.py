@@ -39,7 +39,7 @@ MCP_SERVERS: Dict[str, Dict[str, str]] = {
 
 # Google Gemini Configuration (Primary Planner & Domain Executors)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
-GEMINI_PLANNER_MODEL_ID = os.environ.get("GEMINI_PLANNER_MODEL_ID") or os.environ.get("GEMINI_MODEL_ID", "gemini-2.5-flash")
-GEMINI_EXECUTOR_MODEL_ID = os.environ.get("GEMINI_EXECUTOR_MODEL_ID", "gemini-2.5-flash")
+GEMINI_PLANNER_MODEL_ID = os.environ.get("GEMINI_PLANNER_MODEL_ID") or os.environ.get("GEMINI_MODEL_ID", "gemini-3.8-flash")
+GEMINI_EXECUTOR_MODEL_ID = os.environ.get("GEMINI_EXECUTOR_MODEL_ID") or os.environ.get("GEMINI_MODEL_ID", "gemini-3.8-flash")
 GEMINI_MODEL_ID = GEMINI_PLANNER_MODEL_ID
 

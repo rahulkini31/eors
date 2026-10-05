@@ -328,24 +328,34 @@ def evaluate_parity(
     return verdict, failures, extracted
 
 
+SWARM_ENDPOINT = os.environ.get(
+    "SWARM_ENDPOINT",
+    "https://aca-maf-swarm.agreeablemeadow-194f1f73.southeastasia.azurecontainerapps.io/solve"
+)
+
+
 async def evaluate_test_case(tc: Dict[str, Any], idx: int, total: int) -> Dict[str, Any]:
-    """Runs a single test case with strict prompt isolation and clean orchestrator state."""
+    """Runs a single test case against the live Azure Container App with strict prompt isolation."""
     tc_id = tc["id"]
     category = tc["category"]
     raw_question = tc["question"]
 
-    print(f"\n[{idx}/{total}] RUNNING {tc_id} ({category}):")
+    print(f"\n[{idx}/{total}] RUNNING {tc_id} ({category}) ON AZURE:")
     print(f"      Question: \"{raw_question}\"")
 
-    # Strict isolation: Fresh MultiAgentOrchestrator per test case
-    orchestrator = MultiAgentOrchestrator()
+    import httpx
 
     t0 = time.time()
-    swarm_res: SwarmExecutionResult = await orchestrator.solve_query(raw_question)
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        resp = await client.post(SWARM_ENDPOINT, json={"query": raw_question})
+        if resp.status_code != 200:
+            print(f"      [Error] Endpoint returned HTTP {resp.status_code}: {resp.text}")
+            resp.raise_for_status()
+        data = resp.json()
     latency_sec = round(time.time() - t0, 2)
 
-    agent_answer = swarm_res.synthesized_answer
-    steps = swarm_res.execution_steps
+    agent_answer = data.get("final_answer", "")
+    steps = data.get("execution_steps") or data.get("a2a_trace", [])
 
     verdict, failures, extracted = evaluate_parity(tc, agent_answer, steps)
     status_str = "PASS" if verdict else "FAIL"
@@ -364,14 +374,14 @@ async def evaluate_test_case(tc: Dict[str, Any], idx: int, total: int) -> Dict[s
         "subtask_count": len(steps),
         "execution_steps": [
             {
-                "step_number": s.step_number,
-                "domain": s.domain,
-                "agent_name": s.agent_name,
-                "sql_executed": s.sql_executed,
-                "rows_returned_count": len(s.records_returned),
-                "duration_ms": round(s.duration_ms, 1)
+                "step_number": s.get("step_number", s.get("step", i + 1)) if isinstance(s, dict) else getattr(s, "step_number", i + 1),
+                "domain": s.get("domain", "") if isinstance(s, dict) else getattr(s, "domain", ""),
+                "agent_name": s.get("agent_name", s.get("recipient", "")) if isinstance(s, dict) else getattr(s, "agent_name", ""),
+                "sql_executed": s.get("sql_executed") if isinstance(s, dict) else getattr(s, "sql_executed", None),
+                "rows_returned_count": len(s.get("records_returned", s.get("response", {}).get("rows", []))) if isinstance(s, dict) else len(getattr(s, "records_returned", [])),
+                "duration_ms": round(s.get("duration_ms", 0.0), 1) if isinstance(s, dict) else round(getattr(s, "duration_ms", 0.0), 1)
             }
-            for s in steps
+            for i, s in enumerate(steps)
         ],
         "agent_synthesized_answer": agent_answer,
         "expected_values": tc.get("evaluation_criteria", {}),
