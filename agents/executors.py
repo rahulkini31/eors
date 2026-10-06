@@ -152,7 +152,16 @@ INSTRUCTIONS FOR SQL FORMULATION:
                 pass
 
             # Execute via strictly isolated MCP tool
-            exec_res = await self.execute_tool(tool_name, {"query": sql, "max_rows": max_rows})
+            try:
+                from agents.telemetry import get_tracer
+                tracer = get_tracer("agents.executors")
+                with tracer.start_as_current_span(f"mcp_tool_{tool_name}") as tool_span:
+                    tool_span.set_attribute("mcp.server", f"mcp_{suffix}")
+                    tool_span.set_attribute("db.statement", sql.strip())
+                    exec_res = await self.execute_tool(tool_name, {"query": sql, "max_rows": max_rows})
+            except Exception:
+                exec_res = await self.execute_tool(tool_name, {"query": sql, "max_rows": max_rows})
+
             rows = exec_res.get("rows", []) if isinstance(exec_res, dict) else []
 
             try:

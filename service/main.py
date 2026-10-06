@@ -14,7 +14,6 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from agents.messages import SwarmResolutionResponse
-from agents.bus_runtime import MAFMessageBusManager
 from agents.orchestrator import MultiAgentOrchestrator
 from agents.evaluations import SwarmTrajectoryEvaluator
 from agents.event_streamer import AgentEventStreamer
@@ -37,8 +36,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Global MAF runtime manager
-bus_manager = MAFMessageBusManager()
+# Long-term memory manager
 mem_manager = LongTermMemoryManager()
 
 # Static UI template path
@@ -62,28 +60,14 @@ class QueryResponse(BaseModel):
     trajectory_scorecard: dict
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initializes the MAF asynchronous message bus runtime on container startup."""
-    logging.info("Starting up MAF Message Bus Manager...")
-    await bus_manager.initialize_and_start()
-    logging.info("MAF Message Bus Manager initialized successfully.")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Stops the MAF runtime on container shutdown."""
-    await bus_manager.shutdown()
-
-
 @app.get("/health")
 async def health_check():
     """Liveness and readiness probe for Azure Container Apps."""
     return {
         "status": "healthy",
         "service": "aca-maf-swarm",
-        "runtime": "SingleThreadedAgentRuntime",
-        "actors": ["GeminiPlanner", "ERP_Agent", "WMS_Agent", "TMS_Agent"],
+        "orchestrator": "MultiAgentOrchestrator",
+        "agents": ["PlannerAgent", "ERP_Agent", "WMS_Agent", "TMS_Agent"],
         "dapr_port": os.environ.get("DAPR_HTTP_PORT", "3500"),
         "app_insights_enabled": bool(os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"))
     }

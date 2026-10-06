@@ -84,58 +84,65 @@ class MultiAgentOrchestrator:
         print(f"Query: '{user_query}'")
         print(f"{'='*70}\n")
 
-        # Step 0: Ping & Introspect live MCP servers
-        print("[Swarm Phase 0] Dynamic Ecosystem Introspection...")
-        try:
-            from agents.event_streamer import AgentEventStreamer
-            await AgentEventStreamer.emit(
-                "discovery_start",
-                "GeminiPlanner",
-                "Pinging MCP servers to dynamically read ERP, WMS, and TMS schemas without hardcoding..."
-            )
-        except Exception:
-            pass
+        from agents.telemetry import get_tracer
+        tracer = get_tracer("agents.orchestrator")
 
-        pings = await self.verify_infrastructure()
-        all_healthy = all(p.get("status") == "online" for p in pings.values())
-        print(f"  MCP Server Health: ERP={pings.get('ERP', {}).get('status')}, "
-              f"WMS={pings.get('WMS', {}).get('status')}, "
-              f"TMS={pings.get('TMS', {}).get('status')}")
+        with tracer.start_as_current_span("planner_strategic_orchestration") as root_span:
+            root_span.set_attribute("agent.id", "PlannerAgent")
+            root_span.set_attribute("user.query", user_query)
 
-        architectures = await self.introspect_ecosystem()
-        for domain, arch in architectures.items():
-            col_count = len(arch.get("database_schema", {}).get("rows", []))
-            print(f"  Discovered {domain} ({arch['server_name']}): {len(arch['available_tools'])} tools, {col_count} columns")
+            # Step 0: Ping & Introspect live MCP servers
+            print("[Swarm Phase 0] Dynamic Ecosystem Introspection...")
+            try:
+                from agents.event_streamer import AgentEventStreamer
+                await AgentEventStreamer.emit(
+                    "discovery_start",
+                    "GeminiPlanner",
+                    "Pinging MCP servers to dynamically read ERP, WMS, and TMS schemas without hardcoding..."
+                )
+            except Exception:
+                pass
 
-        try:
-            from agents.event_streamer import AgentEventStreamer
-            await AgentEventStreamer.emit(
-                "discovery_done",
-                "GeminiPlanner",
-                f"Dynamic discovery complete: introspected {len(architectures)} decoupled domain architectures.",
-                {"domains": list(architectures.keys())}
-            )
-        except Exception:
-            pass
+            pings = await self.verify_infrastructure()
+            all_healthy = all(p.get("status") == "online" for p in pings.values())
+            print(f"  MCP Server Health: ERP={pings.get('ERP', {}).get('status')}, "
+                  f"WMS={pings.get('WMS', {}).get('status')}, "
+                  f"TMS={pings.get('TMS', {}).get('status')}")
 
-        # Step 1: Planner formulation via Gemini
-        print("\n[Swarm Phase 1] Formulating Strategic Multi-Hop Plan via Gemini Planner...")
-        planner_plan = await self.planner.plan(user_query)
+            architectures = await self.introspect_ecosystem()
+            for domain, arch in architectures.items():
+                col_count = len(arch.get("database_schema", {}).get("rows", []))
+                print(f"  Discovered {domain} ({arch['server_name']}): {len(arch['available_tools'])} tools, {col_count} columns")
 
-        try:
-            from agents.event_streamer import AgentEventStreamer
-            phases_count = len(planner_plan.get("plan", {}).get("execution_phases", []))
-            await AgentEventStreamer.emit(
-                "agent_dispatch",
-                "GeminiPlanner",
-                f"Strategic plan formulated: {phases_count} execution phases identified across the ecosystem.",
-                {"plan": planner_plan}
-            )
-        except Exception:
-            pass
+            try:
+                from agents.event_streamer import AgentEventStreamer
+                await AgentEventStreamer.emit(
+                    "discovery_done",
+                    "GeminiPlanner",
+                    f"Dynamic discovery complete: introspected {len(architectures)} decoupled domain architectures.",
+                    {"domains": list(architectures.keys())}
+                )
+            except Exception:
+                pass
 
-        # Step 2: Execution loop across dynamic swarm phases
-        return await self._run_llm_swarm(user_query, planner_plan, architectures, start_time)
+            # Step 1: Planner formulation via Gemini
+            print("\n[Swarm Phase 1] Formulating Strategic Multi-Hop Plan via Gemini Planner...")
+            planner_plan = await self.planner.plan(user_query)
+
+            try:
+                from agents.event_streamer import AgentEventStreamer
+                phases_count = len(planner_plan.get("plan", {}).get("execution_phases", []))
+                await AgentEventStreamer.emit(
+                    "agent_dispatch",
+                    "GeminiPlanner",
+                    f"Strategic plan formulated: {phases_count} execution phases identified across the ecosystem.",
+                    {"plan": planner_plan}
+                )
+            except Exception:
+                pass
+
+            # Step 2: Execution loop across dynamic swarm phases
+            return await self._run_llm_swarm(user_query, planner_plan, architectures, start_time)
 
     def _build_result(
         self,
@@ -214,7 +221,17 @@ class MultiAgentOrchestrator:
                 pass
 
             step_start = time.time()
-            exec_res = await assigned.execute_task(action_goal, current_context)
+            try:
+                from agents.telemetry import get_tracer
+                tracer = get_tracer("agents.orchestrator")
+                with tracer.start_as_current_span(f"{assigned.domain.lower()}_agent_reasoning") as span:
+                    span.set_attribute("agent.id", f"{assigned.domain}_Agent")
+                    span.set_attribute("agent.domain", assigned.domain)
+                    span.set_attribute("db.target", db_tag)
+                    span.set_attribute("task.objective", action_goal)
+                    exec_res = await assigned.execute_task(action_goal, current_context)
+            except Exception:
+                exec_res = await assigned.execute_task(action_goal, current_context)
             step_dur = (time.time() - step_start) * 1000
 
             q_res = exec_res.get("query_result", {})
@@ -265,14 +282,18 @@ Guidelines:
 6. If an order is in progress in the warehouse (e.g., status_id = 2, 'Picked onto cart'), explicitly state that it has status_id 2, has been picked onto a cart, and confirm that it is NOT loaded into a trailer or truck.
 7. When reporting customer tiers or rankings, present them in the ranked descending order returned by the queries.
 """
-            synth_resp = await client.aio.models.generate_content(
-                model=self.planner.model_id,
-                contents=synthesis_prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.1
+            from agents.telemetry import get_tracer
+            tracer = get_tracer("agents.orchestrator")
+            with tracer.start_as_current_span("planner_fact_synthesis") as synth_span:
+                synth_span.set_attribute("agent.id", "PlannerAgent")
+                synth_resp = await client.aio.models.generate_content(
+                    model=self.planner.model_id,
+                    contents=synthesis_prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.1
+                    )
                 )
-            )
-            final_answer = synth_resp.text.strip()
+                final_answer = synth_resp.text.strip()
         except Exception as e:
             final_answer = f"Swarm completed {len(steps)} sub-tasks across ERP, WMS, and TMS. (Synthesis error: {e})"
 

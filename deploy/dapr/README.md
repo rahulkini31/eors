@@ -43,10 +43,10 @@ This architecture bridges the application-level actor model of the **Microsoft A
 
 ## 2. The Four Production Pillars
 
-### Pillar 1: The Code Layer (MAF Event-Driven Actors)
-- **Subclassing:** Agents subclass `autogen_core.RoutedAgent` (`GeminiPlannerActor`, `ERPActor`, `WMSActor`, `TMSActor`).
-- **Event-Driven Handlers:** Functions are explicitly decorated with `@message_handler`. No synchronous loops or coupled RPCs.
-- **Routing via `AgentId`:** Agents communicate strictly by targeting typed `AgentId` identifiers (e.g. `AgentId("ERP_Agent", "default")`, `AgentId("WMS_Agent", "default")`). The underlying runtime manages dispatch and serialization.
+### Pillar 1: The Code Layer (Dynamic Multi-Agent Swarm)
+- **Agent Architecture:** Agents consist of `PlannerAgent` (strategic decomposition and schema introspection) and specialized Domain Executors (`ERP_Agent`, `WMS_Agent`, `TMS_Agent`).
+- **Dynamic LLM Reasoning:** Queries are dynamically formulated via Google Gemini zero-shot over live FastMCP schemas. No static templates or question branches.
+- **Strict Domain Isolation:** Domain executors are isolated to their authorized MCP server and database (`ERP_Agent` -> `mcp_db_01`, `WMS_Agent` -> `mcp_db_02`, `TMS_Agent` -> `mcp_db_03`).
 
 ### Pillar 2: The Infrastructure Layer (Azure Container Apps & Dapr)
 - Each agent runs inside an isolated **Azure Container App** process.
@@ -66,29 +66,27 @@ This architecture bridges the application-level actor model of the **Microsoft A
 
 ---
 
-## 3. End-to-End A2A Message Passing Flow
+## 3. End-to-End Dynamic Multi-Agent Execution Flow
 
 ```sequence
-User -> GeminiPlanner: UserQueryMessage("Has Acme Corp laptop order shipped?")
-GeminiPlanner -> DaprPubSub: Publish ERPOrderLookupRequest to topic 'erp-requests'
-DaprPubSub -> ERPActor: Deliver via Service Bus to aca-agent-erp
-ERPActor -> mcp_db_01: execute_read_query_db_01(SELECT from tbl_SalesOrders)
-mcp_db_01 --> ERPActor: Order SO-10045, PO: PO-ACM-2026-9921
-ERPActor --> GeminiPlanner: ERPOrderLookupResponse(Order SO-10045)
+User -> PlannerAgent: Natural Language Prompt (e.g., "Has Acme Corp laptop order shipped?")
+PlannerAgent -> MCP_Servers: Discover live schemas dynamically over SSE
+PlannerAgent -> ERP_Agent: Dispatch Phase 1: Identify Sales Order ID and commercial status
+ERP_Agent -> mcp_db_01: execute_read_query_db_01(Dynamic SELECT on tbl_SalesOrders)
+mcp_db_01 --> ERP_Agent: Returns Order SO-10045 records
+ERP_Agent --> PlannerAgent: Phase 1 findings returned
 
-GeminiPlanner -> DaprPubSub: Publish WMSExecutionLookupRequest to topic 'wms-requests' ("I have order SO-10045...")
-DaprPubSub -> WMSActor: Deliver via Service Bus to aca-agent-wms
-WMSActor -> mcp_db_02: execute_read_query_db_02(SELECT from outbound_picks WHERE erp_order_ref = 'SO-10045')
-mcp_db_02 --> WMSActor: Pick PK-8801, HU-8841-PLT, status_id = 5 (Loaded)
-WMSActor --> GeminiPlanner: WMSExecutionLookupResponse(HU-8841-PLT, status_id = 5)
+PlannerAgent -> WMS_Agent: Dispatch Phase 2: Correlate erp_order_ref 'SO-10045' to outbound pick
+WMS_Agent -> mcp_db_02: execute_read_query_db_02(Dynamic SELECT on outbound_picks)
+mcp_db_02 --> WMS_Agent: Returns Pick PK-8801, Handling Unit HU-8841-PLT, status_id = 5
+WMS_Agent --> PlannerAgent: Phase 2 findings returned
 
-GeminiPlanner -> DaprPubSub: Publish TMSDispatchLookupRequest to topic 'tms-requests' (HU-8841-PLT)
-DaprPubSub -> TMSActor: Deliver via Service Bus to aca-agent-tms
-TMSActor -> mcp_db_03: execute_read_query_db_03(SELECT from Carrier_Manifests WHERE Handling_Unit_Ref = 'HU-8841-PLT')
-mcp_db_03 --> TMSActor: Carrier Apex Freight Express, Tracking TRK-AFX-9948201, Status IN_TRANSIT
-TMSActor --> GeminiPlanner: TMSDispatchLookupResponse(TRK-AFX-9948201, IN_TRANSIT)
+PlannerAgent -> TMS_Agent: Dispatch Phase 3: Correlate Handling_Unit_Ref 'HU-8841-PLT' to freight
+TMS_Agent -> mcp_db_03: execute_read_query_db_03(Dynamic SELECT on Carrier_Manifests)
+mcp_db_03 --> TMS_Agent: Returns Carrier Apex Freight Express, Tracking TRK-AFX-9948201
+TMS_Agent --> PlannerAgent: Phase 3 findings returned
 
-GeminiPlanner -> User: Synthesized response with multi-domain proof
+PlannerAgent -> User: Grounded final synthesis with verified cross-domain facts
 ```
 
 ---
