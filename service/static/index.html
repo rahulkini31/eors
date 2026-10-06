@@ -910,9 +910,12 @@
     function formatMarkdownAnswer(text) {
       if (!text) return '';
       return text
+        .replace(/^###+\s*(.*$)/gm, '<div class="text-white font-semibold text-xs mt-2 mb-1">$1</div>')
+        .replace(/^---+\s*$/gm, '')
         .replace(/\n\n/g, '<br/><br/>')
         .replace(/\n/g, '<br/>')
         .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em class="text-slate-300 italic">$1</em>')
         .replace(/`([^`]+)`/g, '<code class="bg-slate-800 text-sky-300 px-1.5 py-0.5 rounded font-mono text-[11px]">$1</code>')
         .replace(/• (.*?)(<br\/>|$)/g, '<div class="pl-2 border-l-2 border-sky-500/40 my-1 text-slate-200">$1</div>');
     }

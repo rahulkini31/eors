@@ -319,16 +319,31 @@ MULTI-DOMAIN EXECUTION FINDINGS ACROSS THE ECOSYSTEM:
     'records_returned': s.records_returned
 } for s in steps], indent=2)}
 
-Please synthesize a comprehensive, verified, professional answer directly addressing the user's question.
-Guidelines:
-1. Base your answer strictly on the actual records returned from the database queries. Do not assume or extrapolate data not present in the records.
-2. Include the specific identifiers, status values, quantities, monetary values, and tracking numbers retrieved.
-3. If an order was cancelled in ERP and not picked in WMS, state clearly that it was cancelled prior to fulfillment and never picked.
-4. If an order is staged at a dock door awaiting carrier pickup, clearly state that it is staged at the dock and NOT loaded on a delivery truck.
-5. If an order is shipped, state YES and provide the carrier and tracking number.
-6. If an order is in progress in the warehouse (e.g., status_id = 2, 'Picked onto cart'), explicitly state that it has status_id 2, has been picked onto a cart, and confirm that it is NOT loaded into a trailer or truck.
-7. When reporting customer tiers or rankings, present them in the ranked descending order returned by the queries.
-8. Present findings by referring to the enterprise systems as "Commercial ERP", "Warehouse Management", and "Transportation Logistics". Never refer to backend database names like 'db-01-dev', 'db-02-dev', or 'db-03-dev'.
+You are the Lead Planning Agent. Synthesize the findings into a pure natural language explanation that reads like the step-by-step reasoning tokens of an advanced AI system.
+
+CRITICAL STYLE & FORMATTING RULES:
+1. PURE NATURAL LANGUAGE PROSE ONLY:
+   - Absolutely DO NOT use markdown section headers (do NOT use "### 1. Commercial ERP", "### 2. Warehouse Management", "### Summary", etc.).
+   - Absolutely DO NOT use horizontal line breaks (no "---").
+   - Absolutely DO NOT dump database fields as robotic key-value bullet points (e.g. no "* Customer: Acme Corp (ID: CUST-00101)", no "* Sales Order ID: SO-10048").
+   - Never output raw programming tokens like "null". Instead, explain them in natural English (e.g. "the departure timestamp has not been recorded", "the dock loaded timestamp is empty").
+
+2. REASONING TOKENS FLOW:
+   - Your response must read like the internal reasoning tokens and thought process of an LLM explaining its investigation to the user in fluent, conversational prose.
+   - Begin with a direct, clear answer to the user's question in the very first sentence.
+   - Then explain your step-by-step reasoning across the enterprise systems in narrative paragraphs:
+     - Explain what was verified in the Commercial ERP system (the customer name, account tier, purchase order number, sales order ID, order status, amounts, and notes) in fluid prose.
+     - Explain how you followed the trail into the Warehouse Management system (pick task completion, item SKU, quantities, pallet handling unit, physical status, staging dock door, and the fact that dock loading timestamp is unpopulated).
+     - Explain how you cross-referenced the Transportation Logistics system (bill of lading, carrier manifest, carrier name, tracking number, trailer assignment, load status, and transit status).
+     - Weave all specific names, IDs, numbers, and dates naturally into the sentences of the narrative.
+   - Conclude with a clear synthesis tying all the evidence together into the final conclusion.
+
+3. DOMAIN ACCURACY & GROUNDING:
+   - Base all reasoning strictly on the records retrieved. Weave all retrieved IDs, names, status codes, dollar amounts, and tracking numbers naturally into the sentences.
+   - If an order was cancelled, state that it was cancelled prior to fulfillment and never picked in the warehouse.
+   - If an order is staged at a dock door awaiting pickup, clearly explain that because the dock loaded timestamp and trailer departure timestamps are unrecorded, the pallet remains staged at the dock door and has not been loaded onto a delivery truck.
+   - If an order is shipped, state YES and provide the carrier and tracking number.
+   - Always refer to the enterprise systems as "Commercial ERP", "Warehouse Management", and "Transportation Logistics", never mentioning raw database names like 'db-01-dev'.
 """
             from agents.telemetry import get_tracer
             tracer = get_tracer("agents.orchestrator")
@@ -348,6 +363,13 @@ Guidelines:
                     .replace("db-02-dev", "Warehouse Management system")
                     .replace("db-03-dev", "Transportation Logistics system")
                 )
+                import re
+                # Clean up any stray markdown headers, dividers, or null tokens to ensure pure natural language
+                final_answer = re.sub(r"^###+\s*.*$", "", final_answer, flags=re.MULTILINE)
+                final_answer = re.sub(r"^---+$", "", final_answer, flags=re.MULTILINE)
+                final_answer = final_answer.replace("timestamp: null", "timestamp is unrecorded")
+                final_answer = final_answer.replace(": null", ": not recorded")
+                final_answer = re.sub(r"\n{3,}", "\n\n", final_answer).strip()
         except Exception as e:
             final_answer = f"Swarm completed {len(steps)} sub-tasks across Commercial ERP, Warehouse Management, and Transportation Logistics. (Synthesis error: {e})"
 
