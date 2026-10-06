@@ -67,7 +67,12 @@ async def health_check():
         "status": "healthy",
         "service": "aca-maf-swarm",
         "orchestrator": "MultiAgentOrchestrator",
-        "agents": ["PlannerAgent", "ERP_Agent", "WMS_Agent", "TMS_Agent"],
+        "agents": [
+            "Planning Agent",
+            "Executor Agent (ERP)",
+            "Executor Agent (Warehouse)",
+            "Executor Agent (Logistics)"
+        ],
         "dapr_port": os.environ.get("DAPR_HTTP_PORT", "3500"),
         "app_insights_enabled": bool(os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"))
     }
@@ -98,7 +103,7 @@ async def solve_query(req: QueryRequest, request: Request):
             a2a_trace = [
                 {
                     "step": s.step_number,
-                    "sender": "PlannerAgent",
+                    "sender": "Planning Agent",
                     "recipient": s.agent_name,
                     "domain": s.domain,
                     "objective": s.objective,
@@ -180,8 +185,8 @@ async def stream_query(query: str, request: Request):
                 try:
                     await AgentEventStreamer.emit(
                         "swarm_initialized",
-                        "System",
-                        f"Initializing multi-agent investigation across enterprise databases for query: '{query}'",
+                        "Planning Agent",
+                        f"The Planning Agent initialized the multi-agent investigation across enterprise systems for query: '{query}'",
                         {"trace_id": trace_id_str, "user_query": query}
                     )
                     await asyncio.sleep(0.35)
@@ -194,7 +199,7 @@ async def stream_query(query: str, request: Request):
                     a2a_trace = [
                         {
                             "step": s.step_number,
-                            "sender": "PlannerAgent",
+                            "sender": "Planning Agent",
                             "recipient": s.agent_name,
                             "domain": s.domain,
                             "objective": s.objective,
@@ -230,8 +235,8 @@ async def stream_query(query: str, request: Request):
 
                     await AgentEventStreamer.emit(
                         "verification_audit",
-                        "Evaluator",
-                        f"Trajectory Audit: {scorecard.verdict} ({int(scorecard.overall_score * 100)}% Compliance across all execution spans)",
+                        "Audit Evaluator",
+                        f"Verification Audit: {scorecard.verdict} ({int(scorecard.overall_score * 100)}% Compliance across all execution spans)",
                         scorecard.model_dump()
                     )
                     await asyncio.sleep(0.35)
@@ -264,8 +269,8 @@ async def stream_query(query: str, request: Request):
                     # Emit completed event
                     await AgentEventStreamer.emit(
                         "investigation_complete",
-                        "System",
-                        "Multi-agent investigation completed successfully.",
+                        "Planning Agent",
+                        "The multi-agent investigation has concluded successfully with grounded evidence.",
                         {
                             "session_id": session_id,
                             "trace_id": trace_id_str,

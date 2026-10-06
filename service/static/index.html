@@ -132,14 +132,15 @@
               AI
             </div>
             <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl rounded-tl-none p-3.5 max-w-[90%] text-slate-200 space-y-2">
-              <p class="font-medium text-white">EORS Swarm Orchestrator Online</p>
+              <p class="font-medium text-white">Multi-Agent Enterprise Orchestrator Online</p>
               <p class="text-xs text-slate-300 leading-relaxed">
-                I am connected to 4 distributed actors across 3 decoupled databases:
+                Connected to specialized AI agents coordinating across decoupled enterprise domains:
               </p>
-              <ul class="text-xs text-slate-400 space-y-1 font-mono">
-                <li>• <span class="text-emerald-400 font-semibold">ERP_Agent</span>: Financial Orders & Commercial (<code class="text-slate-300">db-01-dev</code>)</li>
-                <li>• <span class="text-amber-400 font-semibold">WMS_Agent</span>: Physical Picks & Bins (<code class="text-slate-300">db-02-dev</code>)</li>
-                <li>• <span class="text-indigo-400 font-semibold">TMS_Agent</span>: Freight Routing & Tracking (<code class="text-slate-300">db-03-dev</code>)</li>
+              <ul class="text-xs text-slate-400 space-y-1">
+                <li>• <span class="text-purple-400 font-semibold">Planning Agent</span>: Strategic Planning & Fact Synthesis</li>
+                <li>• <span class="text-emerald-400 font-semibold">Executor Agent (ERP)</span>: Commercial Orders & Financial Accounts</li>
+                <li>• <span class="text-amber-400 font-semibold">Executor Agent (Warehouse)</span>: Physical Fulfillment & Pallet Staging</li>
+                <li>• <span class="text-indigo-400 font-semibold">Executor Agent (Logistics)</span>: Freight Manifests & Carrier Tracking</li>
               </ul>
               <p class="text-xs text-slate-400">
                 Ask a question to see real-time agent coordination in the right-hand inspector.
@@ -196,7 +197,7 @@
           <!-- Planner Actor -->
           <div id="node-planner" class="p-2 rounded-lg border border-slate-800 bg-slate-900/40 transition">
             <div class="flex items-center justify-between text-[11px] mb-1">
-              <span class="font-medium text-purple-400">GeminiPlanner</span>
+              <span class="font-medium text-purple-400">Planning Agent</span>
               <span class="text-[9px] font-mono text-slate-400 status-pill">READY</span>
             </div>
             <div class="text-[10px] text-slate-400 truncate">Strategic Orchestrator</div>
@@ -205,28 +206,28 @@
           <!-- ERP Actor -->
           <div id="node-erp" class="p-2 rounded-lg border border-slate-800 bg-slate-900/40 transition">
             <div class="flex items-center justify-between text-[11px] mb-1">
-              <span class="font-medium text-emerald-400">ERP_Agent</span>
+              <span class="font-medium text-emerald-400">Executor Agent</span>
               <span class="text-[9px] font-mono text-slate-400 status-pill">READY</span>
             </div>
-            <div class="text-[10px] text-slate-400 truncate">db-01-dev (Financial)</div>
+            <div class="text-[10px] text-slate-400 truncate">Commercial ERP System</div>
           </div>
 
           <!-- WMS Actor -->
           <div id="node-wms" class="p-2 rounded-lg border border-slate-800 bg-slate-900/40 transition">
             <div class="flex items-center justify-between text-[11px] mb-1">
-              <span class="font-medium text-amber-400">WMS_Agent</span>
+              <span class="font-medium text-amber-400">Executor Agent</span>
               <span class="text-[9px] font-mono text-slate-400 status-pill">READY</span>
             </div>
-            <div class="text-[10px] text-slate-400 truncate">db-02-dev (Warehouse)</div>
+            <div class="text-[10px] text-slate-400 truncate">Warehouse Management System</div>
           </div>
 
           <!-- TMS Actor -->
           <div id="node-tms" class="p-2 rounded-lg border border-slate-800 bg-slate-900/40 transition">
             <div class="flex items-center justify-between text-[11px] mb-1">
-              <span class="font-medium text-indigo-400">TMS_Agent</span>
+              <span class="font-medium text-indigo-400">Executor Agent</span>
               <span class="text-[9px] font-mono text-slate-400 status-pill">READY</span>
             </div>
-            <div class="text-[10px] text-slate-400 truncate">db-03-dev (Freight)</div>
+            <div class="text-[10px] text-slate-400 truncate">Transportation Logistics System</div>
           </div>
         </div>
 
@@ -521,15 +522,19 @@
     function handleStreamEvent(event, aiMsgId) {
       const feed = document.getElementById('stream-events-feed');
 
+      // Normalize agent name
+      const agentName = event.agent || 'System';
+      const agentLower = agentName.toLowerCase();
+
       // Update Top Actor Badges based on event
-      if (event.agent === 'GeminiPlanner') {
+      if (agentLower.includes('plan')) {
         const isDone = ['evidence_synthesized', 'synthesis_done', 'investigation_complete', 'completed'].includes(event.type);
         setActorRibbonState('planner', isDone ? 'done' : 'active');
-      } else if (event.agent === 'ERP_Agent') {
+      } else if (agentLower.includes('erp') || agentLower.includes('commercial')) {
         setActorRibbonState('erp', ['domain_findings', 'tool_result'].includes(event.type) ? 'done' : 'active');
-      } else if (event.agent === 'WMS_Agent') {
+      } else if (agentLower.includes('warehouse') || agentLower.includes('wms')) {
         setActorRibbonState('wms', ['domain_findings', 'tool_result'].includes(event.type) ? 'done' : 'active');
-      } else if (event.agent === 'TMS_Agent') {
+      } else if (agentLower.includes('logistics') || agentLower.includes('tms') || agentLower.includes('freight')) {
         setActorRibbonState('tms', ['domain_findings', 'tool_result'].includes(event.type) ? 'done' : 'active');
       }
 
@@ -547,36 +552,58 @@
 
       // Color coding per agent
       let agentColor = "text-sky-400 border-sky-500/30 bg-sky-950/20";
-      if (event.agent === 'ERP_Agent') agentColor = "text-emerald-400 border-emerald-500/30 bg-emerald-950/20";
-      if (event.agent === 'WMS_Agent') agentColor = "text-amber-400 border-amber-500/30 bg-amber-950/20";
-      if (event.agent === 'TMS_Agent') agentColor = "text-indigo-400 border-indigo-500/30 bg-indigo-950/20";
-      if (event.agent === 'GeminiPlanner') agentColor = "text-purple-400 border-purple-500/30 bg-purple-950/20";
-
-      let headerExtra = event.database ? `<span class="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">${event.database}</span>` : '';
-
-      let bodyHtml = `<p class="text-slate-200 mt-1 font-medium leading-relaxed">${escapeHtml(event.message)}</p>`;
-
-      // Natural language search objective (do NOT show bare SQL)
-      if (event.data && event.data.query_description && event.data.query_description !== event.message) {
-        bodyHtml += `
-          <div class="mt-2 bg-slate-950/80 p-2.5 rounded-lg border border-sky-900/40 text-[11px] text-sky-200">
-            <span class="text-sky-400 text-[10px] block uppercase font-bold tracking-wider mb-0.5">Search Objective:</span>
-            <span>${escapeHtml(event.data.query_description)}</span>
-          </div>
-        `;
+      if (agentLower.includes('erp') || agentLower.includes('commercial')) {
+        agentColor = "text-emerald-400 border-emerald-500/30 bg-emerald-950/20";
+      } else if (agentLower.includes('warehouse') || agentLower.includes('wms')) {
+        agentColor = "text-amber-400 border-amber-500/30 bg-amber-950/20";
+      } else if (agentLower.includes('logistics') || agentLower.includes('tms') || agentLower.includes('freight')) {
+        agentColor = "text-indigo-400 border-indigo-500/30 bg-indigo-950/20";
+      } else if (agentLower.includes('plan')) {
+        agentColor = "text-purple-400 border-purple-500/30 bg-purple-950/20";
+      } else if (agentLower.includes('eval') || agentLower.includes('audit')) {
+        agentColor = "text-teal-400 border-teal-500/30 bg-teal-950/20";
       }
+
+      // Sanitize database name display
+      let dbName = event.database || '';
+      dbName = dbName
+        .replace(/db-01-dev/gi, 'Commercial ERP System')
+        .replace(/db-02-dev/gi, 'Warehouse Management System')
+        .replace(/db-03-dev/gi, 'Transportation Logistics System');
+
+      let headerExtra = dbName ? `<span class="text-[10px] text-slate-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">${escapeHtml(dbName)}</span>` : '';
+
+      // MCP Tool Invoked Badge
+      let toolBadge = '';
+      if (event.data && event.data.tool_called) {
+        toolBadge = `<span class="text-[9px] font-mono text-cyan-300 bg-cyan-950/50 border border-cyan-700/60 px-1.5 py-0.5 rounded flex items-center gap-1">🔧 Tool: <code class="text-white">${escapeHtml(event.data.tool_called)}</code></span>`;
+      }
+
+      // Sanitize and format message
+      let msg = event.message || '';
+      msg = msg
+        .replace(/db-01-dev/gi, 'Commercial ERP system')
+        .replace(/db-02-dev/gi, 'Warehouse Management system')
+        .replace(/db-03-dev/gi, 'Transportation Logistics system');
+
+      let bodyHtml = `<div class="text-slate-200 mt-1 font-medium leading-relaxed">${formatMarkdownAnswer(msg)}</div>`;
 
       // Natural language query findings (do NOT dump raw JSON)
       if ((event.type === 'domain_findings' || event.type === 'tool_result') && event.data) {
-        const summary = event.data.natural_language_summary || event.data.summary || (typeof event.data === 'string' ? event.data : null);
+        let summary = event.data.natural_language_summary || event.data.summary || (typeof event.data === 'string' ? event.data : null);
         const count = event.data.count !== undefined ? event.data.count : (event.data.rows ? event.data.rows.length : null);
-        const countBadge = count !== null ? `<span class="text-slate-400 font-mono text-[10px]">(${count} record${count === 1 ? '' : 's'} found)</span>` : '';
+        const countBadge = count !== null ? `<span class="text-slate-400 font-mono text-[10px]">(${count} record${count === 1 ? '' : 's'} verified)</span>` : '';
 
         if (summary) {
+          summary = summary
+            .replace(/db-01-dev/gi, 'Commercial ERP system')
+            .replace(/db-02-dev/gi, 'Warehouse Management system')
+            .replace(/db-03-dev/gi, 'Transportation Logistics system');
+
           bodyHtml += `
             <div class="mt-2 bg-emerald-950/20 p-3 rounded-lg border border-emerald-500/30 text-xs text-slate-100 leading-relaxed space-y-1.5">
               <div class="flex items-center justify-between text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-                <span>✓ Database Findings</span>
+                <span>✓ Verified System Findings</span>
                 ${countBadge}
               </div>
               <div class="prose prose-invert text-xs leading-relaxed max-w-none text-slate-200 whitespace-pre-line">
@@ -589,11 +616,16 @@
 
       // Synthesis card
       if ((event.type === 'evidence_synthesized' || event.type === 'synthesis_done') && event.data && event.data.final_answer) {
+        let finalAns = event.data.final_answer
+          .replace(/db-01-dev/gi, 'Commercial ERP system')
+          .replace(/db-02-dev/gi, 'Warehouse Management system')
+          .replace(/db-03-dev/gi, 'Transportation Logistics system');
+
         bodyHtml += `
           <div class="mt-2 bg-purple-950/20 p-3 rounded-lg border border-purple-500/30 text-xs text-slate-100 leading-relaxed">
             <div class="text-[10px] font-bold text-purple-400 uppercase tracking-wider mb-1">✓ Grounded Synthesis</div>
             <div class="prose prose-invert text-xs leading-relaxed max-w-none text-slate-200">
-              ${formatMarkdownAnswer(event.data.final_answer)}
+              ${formatMarkdownAnswer(finalAns)}
             </div>
           </div>
         `;
@@ -601,12 +633,13 @@
 
       card.innerHTML = `
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${agentColor}">${event.agent}</span>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${agentColor}">${escapeHtml(agentName)}</span>
             <span class="text-[10px] text-slate-300 font-semibold">${formatStageName(event.type)}</span>
+            ${toolBadge}
             ${headerExtra}
           </div>
-          <span class="text-[10px] text-slate-400 font-mono">${new Date().toLocaleTimeString()}</span>
+          <span class="text-[10px] text-slate-400 font-mono shrink-0">${new Date().toLocaleTimeString()}</span>
         </div>
         ${bodyHtml}
       `;
@@ -880,7 +913,8 @@
         .replace(/\n\n/g, '<br/><br/>')
         .replace(/\n/g, '<br/>')
         .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
-        .replace(/• (.*?)/g, '<div class="pl-2 border-l-2 border-sky-500/40 my-1 text-slate-200">$1</div>');
+        .replace(/`([^`]+)`/g, '<code class="bg-slate-800 text-sky-300 px-1.5 py-0.5 rounded font-mono text-[11px]">$1</code>')
+        .replace(/• (.*?)(<br\/>|$)/g, '<div class="pl-2 border-l-2 border-sky-500/40 my-1 text-slate-200">$1</div>');
     }
 
     function escapeHtml(text) {

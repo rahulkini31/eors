@@ -61,6 +61,24 @@ class BaseExecutorAgent:
             )
         return await self.mcp_client.execute_tool(self.domain, tool_name, arguments or {})
 
+    @property
+    def display_name(self) -> str:
+        names = {
+            "ERP": "Executor Agent (ERP)",
+            "WMS": "Executor Agent (Warehouse)",
+            "TMS": "Executor Agent (Logistics)"
+        }
+        return names.get(self.domain, f"Executor Agent ({self.domain})")
+
+    @property
+    def system_display_name(self) -> str:
+        names = {
+            "ERP": "Commercial ERP system",
+            "WMS": "Warehouse Management system",
+            "TMS": "Transportation Logistics system"
+        }
+        return names.get(self.domain, f"{self.domain} system")
+
     async def execute_task(self, task_instruction: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Processes a task instruction, dynamically generates domain SQL via Gemini LLM, and executes it via MCP."""
         if not self.api_key:
@@ -109,7 +127,7 @@ INSTRUCTIONS FOR SQL FORMULATION:
 8. Output JSON matching:
 {{
   "thought_process": "Explanation of query rationale, tables chosen, and filter conditions",
-  "query_description": "1 clear sentence in natural language describing what records are being searched and why",
+  "query_description": "1 clear sentence in natural language describing what records are being searched and why (refer to the system by name like Commercial ERP, Warehouse Management, or Transportation Logistics, without raw database codes)",
   "tool_to_call": "execute_read_query_db_XX",
   "sql_query": "SELECT ...",
   "max_rows": 100
@@ -132,28 +150,43 @@ INSTRUCTIONS FOR SQL FORMULATION:
             tool_name = parsed.get("tool_to_call")
             sql = parsed.get("sql_query")
             max_rows = parsed.get("max_rows", 100)
-            query_desc = parsed.get("query_description") or f"Querying {self.domain} database for task: {task_instruction}"
+            query_desc = parsed.get("query_description") or f"Searching the {self.system_display_name} for: {task_instruction}"
 
             # Fallback tool name if omitted or shortened
             suffix = {"ERP": "db_01", "WMS": "db_02", "TMS": "db_03"}[self.domain]
             if not tool_name or tool_name not in self._get_allowed_tool_names():
                 tool_name = f"execute_read_query_{suffix}"
 
-            # Emit real-time query event in natural language (no bare SQL displayed to user)
-            db_tag = {"ERP": "db-01-dev", "WMS": "db-02-dev", "TMS": "db-03-dev"}.get(self.domain, "db")
+            # Emit real-time query event explaining what tool was called and why (no bare SQL displayed to user)
+            clean_goal = query_desc.strip()
+            clean_goal = (
+                clean_goal
+                .replace("db-01-dev", "Commercial ERP system")
+                .replace("db-02-dev", "Warehouse Management system")
+                .replace("db-03-dev", "Transportation Logistics system")
+            )
+            if clean_goal.lower().startswith("retrieve "):
+                clean_goal = "retrieve " + clean_goal[9:]
+            elif clean_goal.lower().startswith("query "):
+                clean_goal = "query " + clean_goal[6:]
+            else:
+                clean_goal = "search for " + clean_goal
+
+            tool_msg = (
+                f"The Executor Agent working on the {self.system_display_name} used tool `{tool_name}` via the MCP server to {clean_goal}."
+            )
             try:
                 from agents.event_streamer import AgentEventStreamer
                 await AgentEventStreamer.emit(
                     "database_query",
-                    f"{self.domain}_Agent",
-                    query_desc,
+                    self.display_name,
+                    tool_msg,
                     {
-                        "query_description": query_desc,
-                        "database": db_tag,
-                        "tool": tool_name,
-                        "sql": sql
+                        "tool_called": tool_name,
+                        "system": self.system_display_name,
+                        "query_description": query_desc
                     },
-                    database=db_tag
+                    database=self.system_display_name
                 )
             except Exception:
                 pass
@@ -174,23 +207,27 @@ INSTRUCTIONS FOR SQL FORMULATION:
 
             rows = exec_res.get("rows", []) if isinstance(exec_res, dict) else []
 
-            # Format result in clear natural language
+            # Format result in clear natural language explaining what the agent understood
             findings_summary = self._format_natural_language_findings(rows, task_instruction)
+            findings_msg = (
+                f"The Executor Agent working on the {self.system_display_name} evaluated the records retrieved by `{tool_name}` and verified domain findings."
+            )
 
             try:
                 from agents.event_streamer import AgentEventStreamer
                 await AgentEventStreamer.emit(
                     "domain_findings",
-                    f"{self.domain}_Agent",
-                    findings_summary,
+                    self.display_name,
+                    findings_msg,
                     {
+                        "tool_called": tool_name,
+                        "system": self.system_display_name,
                         "natural_language_summary": findings_summary,
                         "count": len(rows),
                         "matched": len(rows) > 0,
-                        "database": db_tag,
                         "rows": rows
                     },
-                    database=db_tag
+                    database=self.system_display_name
                 )
             except Exception:
                 pass
@@ -221,7 +258,7 @@ INSTRUCTIONS FOR SQL FORMULATION:
     def _format_natural_language_findings(self, rows: List[Dict[str, Any]], task_instruction: str) -> str:
         """Translates raw query records into clear, human-understandable natural language findings."""
         if not rows:
-            return f"No records found in {self.domain} database matching the search criteria."
+            return f"No records found in the {self.system_display_name} matching the search criteria."
 
         row_count = len(rows)
         if self.domain == "ERP":

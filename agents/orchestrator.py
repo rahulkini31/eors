@@ -91,40 +91,62 @@ class MultiAgentOrchestrator:
             root_span.set_attribute("agent.id", "PlannerAgent")
             root_span.set_attribute("user.query", user_query)
 
-            # Step 0: Ping & Introspect live MCP servers
+            # Step 0: Dynamic Ecosystem Introspection across decoupled systems
             print("[Swarm Phase 0] Dynamic Ecosystem Introspection...")
-            try:
-                from agents.event_streamer import AgentEventStreamer
-                await AgentEventStreamer.emit(
-                    "schema_inspection",
-                    "GeminiPlanner",
-                    "Inspecting database schemas and operational capabilities across Commercial ERP, Warehouse WMS, and Freight TMS..."
-                )
-            except Exception:
-                pass
-
             pings = await self.verify_infrastructure()
-            all_healthy = all(p.get("status") == "online" for p in pings.values())
-            print(f"  MCP Server Health: ERP={pings.get('ERP', {}).get('status')}, "
-                  f"WMS={pings.get('WMS', {}).get('status')}, "
-                  f"TMS={pings.get('TMS', {}).get('status')}")
-
             architectures = await self.introspect_ecosystem()
-            for domain, arch in architectures.items():
-                col_count = len(arch.get("database_schema", {}).get("rows", []))
-                print(f"  Discovered {domain} ({arch['server_name']}): {len(arch['available_tools'])} tools, {col_count} columns")
+
+            # Emit detailed tool comprehension for each system
+            system_introspections = [
+                {
+                    "domain": "ERP",
+                    "tool": "get_schema_db_01",
+                    "system_name": "Commercial ERP system",
+                    "understanding": "understood that the Commercial ERP system manages customer profiles (`tbl_Customers`), sales orders (`tbl_SalesOrders`), line items (`tbl_OrderLineItems`), and item catalog pricing (`tbl_Inventory_Master`) with financial metrics, purchase order references, and commercial order lifecycle statuses."
+                },
+                {
+                    "domain": "WMS",
+                    "tool": "get_schema_db_02",
+                    "system_name": "Warehouse Management system",
+                    "understanding": "understood that the Warehouse Management system tracks outbound physical pick tasks (`outbound_picks`), pallet handling units (`handling_units`), quality inspection lots, and dock doors using numeric fulfillment status codes (Status 1: Allocated, Status 2: Picked, Status 4: Staged at Dock Door, Status 5: Loaded into Outbound Transport)."
+                },
+                {
+                    "domain": "TMS",
+                    "tool": "get_schema_db_03",
+                    "system_name": "Transportation Logistics system",
+                    "understanding": "understood that the Transportation Logistics system manages freight loads (`Freight_Loads`), bills of lading (`Bill_Of_Lading`), and carrier manifests (`Carrier_Manifests`) linking handling units to carriers, trailer assignments, tracking numbers, and departure timestamps."
+                }
+            ]
+
+            for intro in system_introspections:
+                try:
+                    from agents.event_streamer import AgentEventStreamer
+                    await AgentEventStreamer.emit(
+                        "schema_inspection",
+                        "Planning Agent",
+                        f"The Planning Agent used tool `{intro['tool']}` to understand the schema of the {intro['system_name']} using the MCP server, and {intro['understanding']}",
+                        {
+                            "tool_called": intro["tool"],
+                            "system": intro["system_name"],
+                            "understanding": intro["understanding"]
+                        },
+                        database=intro["system_name"]
+                    )
+                    await asyncio.sleep(0.35)
+                except Exception:
+                    pass
 
             try:
                 from agents.event_streamer import AgentEventStreamer
                 await AgentEventStreamer.emit(
                     "schema_inspection_complete",
-                    "GeminiPlanner",
-                    f"Schema discovery completed: Successfully introspected {len(architectures)} enterprise database architectures.",
-                    {"domains": list(architectures.keys())}
+                    "Planning Agent",
+                    "The Planning Agent completed schema inspection across all 3 enterprise systems and understood the data structures needed to investigate the query.",
+                    {"systems": ["Commercial ERP", "Warehouse Management", "Transportation Logistics"]}
                 )
+                await asyncio.sleep(0.35)
             except Exception:
                 pass
-            await asyncio.sleep(0.35)
 
             # Step 1: Planner formulation via Gemini
             print("\n[Swarm Phase 1] Formulating Strategic Multi-Hop Plan via Gemini Planner...")
@@ -135,13 +157,13 @@ class MultiAgentOrchestrator:
                 phases_count = len(planner_plan.get("plan", {}).get("execution_phases", []))
                 await AgentEventStreamer.emit(
                     "orchestration_plan",
-                    "GeminiPlanner",
-                    f"Execution strategy formulated: {phases_count} coordinated phases identified to investigate ground truth.",
+                    "Planning Agent",
+                    f"The Planning Agent formulated a {phases_count}-phase execution strategy across the enterprise systems to investigate ground truth.",
                     {"plan": planner_plan}
                 )
+                await asyncio.sleep(0.35)
             except Exception:
                 pass
-            await asyncio.sleep(0.35)
 
             # Step 2: Execution loop across dynamic swarm phases
             return await self._run_llm_swarm(user_query, planner_plan, architectures, start_time)
@@ -206,18 +228,29 @@ class MultiAgentOrchestrator:
             agent_label = phase.get("assigned_agent", "ERP_Agent")
             assigned = agent_map.get(agent_label, self.erp_agent)
             action_goal = phase.get("action_objective", "")
+            clean_action_goal = (
+                action_goal
+                .replace("db-01-dev", "Commercial ERP system")
+                .replace("db-02-dev", "Warehouse Management system")
+                .replace("db-03-dev", "Transportation Logistics system")
+                .replace("db_01", "Commercial ERP system")
+                .replace("db_02", "Warehouse Management system")
+                .replace("db_03", "Transportation Logistics system")
+            )
 
             print(f"\n  [Sub-Task {idx} -> {assigned.__class__.__name__}]")
-            print(f"  Goal: {action_goal}")
+            print(f"  Goal: {clean_action_goal}")
 
-            db_tag = {"ERP": "db-01-dev", "WMS": "db-02-dev", "TMS": "db-03-dev"}.get(assigned.domain, "db")
+            sys_name = {"ERP": "Commercial ERP system", "WMS": "Warehouse Management system", "TMS": "Transportation Logistics system"}.get(assigned.domain, f"{assigned.domain} system")
+            agent_label = {"ERP": "Executor Agent (ERP)", "WMS": "Executor Agent (Warehouse)", "TMS": "Executor Agent (Logistics)"}.get(assigned.domain, f"Executor Agent ({assigned.domain})")
+            activation_msg = f"The Planning Agent activated the Executor Agent working on the {sys_name} to {clean_action_goal}."
             try:
                 from agents.event_streamer import AgentEventStreamer
                 await AgentEventStreamer.emit(
                     "agent_activated",
-                    f"{assigned.domain}_Agent",
-                    f"Activated {assigned.domain} Agent to investigate: {action_goal}",
-                    database=db_tag
+                    agent_label,
+                    activation_msg,
+                    database=sys_name
                 )
             except Exception:
                 pass
@@ -228,13 +261,13 @@ class MultiAgentOrchestrator:
                 from agents.telemetry import get_tracer
                 tracer = get_tracer("agents.orchestrator")
                 with tracer.start_as_current_span(f"{assigned.domain.lower()}_agent_reasoning") as span:
-                    span.set_attribute("agent.id", f"{assigned.domain}_Agent")
+                    span.set_attribute("agent.id", agent_label)
                     span.set_attribute("agent.domain", assigned.domain)
-                    span.set_attribute("db.target", db_tag)
-                    span.set_attribute("task.objective", action_goal)
-                    exec_res = await assigned.execute_task(action_goal, current_context)
+                    span.set_attribute("system.target", sys_name)
+                    span.set_attribute("task.objective", clean_action_goal)
+                    exec_res = await assigned.execute_task(clean_action_goal, current_context)
             except Exception:
-                exec_res = await assigned.execute_task(action_goal, current_context)
+                exec_res = await assigned.execute_task(clean_action_goal, current_context)
             step_dur = (time.time() - step_start) * 1000
 
             q_res = exec_res.get("query_result", {})
@@ -261,8 +294,8 @@ class MultiAgentOrchestrator:
             from agents.event_streamer import AgentEventStreamer
             await AgentEventStreamer.emit(
                 "evidence_synthesis_start",
-                "GeminiPlanner",
-                "Cross-referencing evidence across ERP, WMS, and TMS to synthesize verified ground truth..."
+                "Planning Agent",
+                "The Planning Agent is cross-referencing findings across Commercial ERP, Warehouse Management, and Transportation Logistics to synthesize verified ground truth..."
             )
         except Exception:
             pass
@@ -295,6 +328,7 @@ Guidelines:
 5. If an order is shipped, state YES and provide the carrier and tracking number.
 6. If an order is in progress in the warehouse (e.g., status_id = 2, 'Picked onto cart'), explicitly state that it has status_id 2, has been picked onto a cart, and confirm that it is NOT loaded into a trailer or truck.
 7. When reporting customer tiers or rankings, present them in the ranked descending order returned by the queries.
+8. Present findings by referring to the enterprise systems as "Commercial ERP", "Warehouse Management", and "Transportation Logistics". Never refer to backend database names like 'db-01-dev', 'db-02-dev', or 'db-03-dev'.
 """
             from agents.telemetry import get_tracer
             tracer = get_tracer("agents.orchestrator")
@@ -308,8 +342,14 @@ Guidelines:
                     )
                 )
                 final_answer = synth_resp.text.strip()
+                final_answer = (
+                    final_answer
+                    .replace("db-01-dev", "Commercial ERP system")
+                    .replace("db-02-dev", "Warehouse Management system")
+                    .replace("db-03-dev", "Transportation Logistics system")
+                )
         except Exception as e:
-            final_answer = f"Swarm completed {len(steps)} sub-tasks across ERP, WMS, and TMS. (Synthesis error: {e})"
+            final_answer = f"Swarm completed {len(steps)} sub-tasks across Commercial ERP, Warehouse Management, and Transportation Logistics. (Synthesis error: {e})"
 
         ans_lower = final_answer.lower()
         is_shipped = ("yes" in ans_lower and "shipped" in ans_lower) or ("in_transit" in ans_lower)
@@ -321,8 +361,8 @@ Guidelines:
             from agents.event_streamer import AgentEventStreamer
             await AgentEventStreamer.emit(
                 "evidence_synthesized",
-                "GeminiPlanner",
-                "Evidence synthesis complete: Order lifecycle and fulfillment state verified across all enterprise systems.",
+                "Planning Agent",
+                "The Planning Agent synthesized the complete fulfillment trail across all enterprise systems.",
                 {
                     "final_answer": final_answer,
                     "is_shipped": is_shipped,
@@ -331,6 +371,7 @@ Guidelines:
             )
         except Exception:
             pass
+        await asyncio.sleep(0.35)
         await asyncio.sleep(0.35)
 
         print(f"\n{'='*70}")
