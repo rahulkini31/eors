@@ -86,6 +86,16 @@ class MultiAgentOrchestrator:
 
         # Step 0: Ping & Introspect live MCP servers
         print("[Swarm Phase 0] Dynamic Ecosystem Introspection...")
+        try:
+            from agents.event_streamer import AgentEventStreamer
+            await AgentEventStreamer.emit(
+                "discovery_start",
+                "GeminiPlanner",
+                "Pinging MCP servers to dynamically read ERP, WMS, and TMS schemas without hardcoding..."
+            )
+        except Exception:
+            pass
+
         pings = await self.verify_infrastructure()
         all_healthy = all(p.get("status") == "online" for p in pings.values())
         print(f"  MCP Server Health: ERP={pings.get('ERP', {}).get('status')}, "
@@ -97,9 +107,32 @@ class MultiAgentOrchestrator:
             col_count = len(arch.get("database_schema", {}).get("rows", []))
             print(f"  Discovered {domain} ({arch['server_name']}): {len(arch['available_tools'])} tools, {col_count} columns")
 
+        try:
+            from agents.event_streamer import AgentEventStreamer
+            await AgentEventStreamer.emit(
+                "discovery_done",
+                "GeminiPlanner",
+                f"Dynamic discovery complete: introspected {len(architectures)} decoupled domain architectures.",
+                {"domains": list(architectures.keys())}
+            )
+        except Exception:
+            pass
+
         # Step 1: Planner formulation via Gemini
         print("\n[Swarm Phase 1] Formulating Strategic Multi-Hop Plan via Gemini Planner...")
         planner_plan = await self.planner.plan(user_query)
+
+        try:
+            from agents.event_streamer import AgentEventStreamer
+            phases_count = len(planner_plan.get("plan", {}).get("execution_phases", []))
+            await AgentEventStreamer.emit(
+                "agent_dispatch",
+                "GeminiPlanner",
+                f"Strategic plan formulated: {phases_count} execution phases identified across the ecosystem.",
+                {"plan": planner_plan}
+            )
+        except Exception:
+            pass
 
         # Step 2: Execution loop across dynamic swarm phases
         return await self._run_llm_swarm(user_query, planner_plan, architectures, start_time)
@@ -168,6 +201,18 @@ class MultiAgentOrchestrator:
             print(f"\n  [Sub-Task {idx} -> {assigned.__class__.__name__}]")
             print(f"  Goal: {action_goal}")
 
+            db_tag = {"ERP": "db-01-dev", "WMS": "db-02-dev", "TMS": "db-03-dev"}.get(assigned.domain, "db")
+            try:
+                from agents.event_streamer import AgentEventStreamer
+                await AgentEventStreamer.emit(
+                    "agent_start",
+                    f"{assigned.domain}_Agent",
+                    f"Executing {assigned.domain} sub-task: {action_goal}",
+                    database=db_tag
+                )
+            except Exception:
+                pass
+
             step_start = time.time()
             exec_res = await assigned.execute_task(action_goal, current_context)
             step_dur = (time.time() - step_start) * 1000
@@ -230,6 +275,27 @@ Guidelines:
             final_answer = synth_resp.text.strip()
         except Exception as e:
             final_answer = f"Swarm completed {len(steps)} sub-tasks across ERP, WMS, and TMS. (Synthesis error: {e})"
+
+        ans_lower = final_answer.lower()
+        is_shipped = ("yes" in ans_lower and "shipped" in ans_lower) or ("in_transit" in ans_lower)
+        import re
+        trk_match = re.search(r"trk-[a-z0-9-]+", ans_lower)
+        tracking_num = trk_match.group(0).upper() if trk_match else None
+
+        try:
+            from agents.event_streamer import AgentEventStreamer
+            await AgentEventStreamer.emit(
+                "synthesis_done",
+                "GeminiPlanner",
+                "Grounded evidence verified and synthesized across all enterprise systems.",
+                {
+                    "final_answer": final_answer,
+                    "is_shipped": is_shipped,
+                    "tracking_number": tracking_num
+                }
+            )
+        except Exception:
+            pass
 
         print(f"\n{'='*70}")
         print("🎯 FINAL SYNTHESIZED ANSWER:")

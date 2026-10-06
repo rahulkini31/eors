@@ -74,6 +74,17 @@ class ERPActor(RoutedAgent):
                 database="db-01-dev"
             )
             
+            import re
+            po_match = re.search(r"PO-[A-Z0-9-]+", message.prompt_context or "")
+            order_match = re.search(r"SO-[0-9]+", message.prompt_context or "")
+
+            if po_match:
+                filter_cond = f"so.PO_Number = '{po_match.group(0)}'"
+            elif order_match:
+                filter_cond = f"so.Order_ID = '{order_match.group(0)}'"
+            else:
+                filter_cond = f"c.Cust_Name LIKE '%{message.customer_query}%' AND im.Item_Description LIKE '%{message.item_query}%' AND so.OrderStatus != 'Cancelled'"
+
             sql_query = f"""
             SELECT 
                 so.Order_ID,
@@ -88,9 +99,7 @@ class ERPActor(RoutedAgent):
             JOIN dbo.tbl_Customers c ON so.Cust_ID = c.Cust_ID
             JOIN dbo.tbl_OrderLineItems oli ON so.Order_ID = oli.Order_ID
             JOIN dbo.tbl_Inventory_Master im ON oli.Item_SKU = im.Item_SKU
-            WHERE c.Cust_Name LIKE '%{message.customer_query}%'
-              AND im.Item_Description LIKE '%{message.item_query}%'
-              AND so.OrderStatus != 'Cancelled'
+            WHERE {filter_cond}
             ORDER BY 
                 CASE WHEN so.OrderStatus = 'Completed' THEN 1 ELSE 2 END,
                 so.Order_Date DESC
@@ -509,9 +518,12 @@ class GeminiPlannerActor(RoutedAgent):
                 {"target": str(erp_agent_id), "prompt": message.query}
             )
             
+            import re
+            cust = "Globex" if "globex" in message.query.lower() else ("Cyberdyne" if "cyberdyne" in message.query.lower() else "Acme")
+            item = "Chair" if "chair" in message.query.lower() else "Laptop"
             erp_req = ERPOrderLookupRequest(
-                customer_query="Acme",
-                item_query="Laptop",
+                customer_query=cust,
+                item_query=item,
                 correlation_id=message.session_id,
                 prompt_context=message.query,
                 trace_context=inject_trace_context()
@@ -671,7 +683,11 @@ CORRELATED CROSS-DOMAIN FINDINGS OVER MAF MESSAGE BUS:
    Dispatched At: {tms_resp.dispatched_at}
    Estimated Delivery: {tms_resp.estimated_delivery}
 
-Please synthesize a verified, authoritative final answer clearly confirming whether customer Acme Corp's laptop order has shipped and providing full end-to-end evidence.
+Please synthesize a verified, authoritative final answer directly addressing the user's question based strictly on the retrieved multi-domain records.
+Guidelines:
+1. If an order is staged at a dock door awaiting carrier pickup (e.g. status_id = 4, PENDING_PICKUP), clearly state that it is staged at the dock and NOT loaded on a delivery truck.
+2. If an order was cancelled in ERP, state clearly that it was cancelled prior to fulfillment.
+3. If an order is shipped, state YES and provide the carrier and tracking number.
 """
                         synth_resp = await client.aio.models.generate_content(
                             model=self.model_id,

@@ -137,8 +137,36 @@ INSTRUCTIONS FOR SQL FORMULATION:
             if not tool_name or tool_name not in self._get_allowed_tool_names():
                 tool_name = f"execute_read_query_{suffix}"
 
+            # Emit real-time tool execution event
+            db_tag = {"ERP": "db-01-dev", "WMS": "db-02-dev", "TMS": "db-03-dev"}.get(self.domain, "db")
+            try:
+                from agents.event_streamer import AgentEventStreamer
+                await AgentEventStreamer.emit(
+                    "tool_call",
+                    f"{self.domain}_Agent",
+                    f"Executing dynamic read query on {db_tag} via {tool_name}",
+                    {"tool": tool_name, "sql": sql},
+                    database=db_tag
+                )
+            except Exception:
+                pass
+
             # Execute via strictly isolated MCP tool
             exec_res = await self.execute_tool(tool_name, {"query": sql, "max_rows": max_rows})
+            rows = exec_res.get("rows", []) if isinstance(exec_res, dict) else []
+
+            try:
+                from agents.event_streamer import AgentEventStreamer
+                await AgentEventStreamer.emit(
+                    "tool_result",
+                    f"{self.domain}_Agent",
+                    f"Retrieved {len(rows)} record(s) from {self.domain} domain.",
+                    {"rows": rows, "count": len(rows), "matched": len(rows) > 0},
+                    database=db_tag
+                )
+            except Exception:
+                pass
+
             return {
                 "status": "success",
                 "domain": self.domain,

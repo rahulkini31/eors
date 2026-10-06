@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from agents.messages import SwarmResolutionResponse
 from agents.bus_runtime import MAFMessageBusManager
 from agents.orchestrator import MultiAgentOrchestrator
 from agents.evaluations import SwarmTrajectoryEvaluator
@@ -200,8 +201,43 @@ async def stream_query(query: str, request: Request):
                         {"trace_id": trace_id_str, "user_query": query}
                     )
 
-                    # Execute query across MAF message bus
-                    resp = await bus_manager.send_user_query(query)
+                    # Execute query via dynamic MultiAgentOrchestrator
+                    orchestrator = MultiAgentOrchestrator()
+                    swarm_res = await orchestrator.solve_query(query)
+
+                    # Map execution steps to a2a_trace format
+                    a2a_trace = [
+                        {
+                            "step": s.step_number,
+                            "sender": "PlannerAgent",
+                            "recipient": s.agent_name,
+                            "domain": s.domain,
+                            "objective": s.objective,
+                            "sql_executed": s.sql_executed,
+                            "response": {
+                                "row_count": len(s.records_returned),
+                                "rows": s.records_returned
+                            }
+                        }
+                        for s in swarm_res.execution_steps
+                    ]
+
+                    ans_lower = swarm_res.synthesized_answer.lower()
+                    is_shipped = ("yes" in ans_lower and "shipped" in ans_lower) or ("in_transit" in ans_lower)
+                    import re
+                    trk_match = re.search(r"trk-[a-z0-9-]+", ans_lower)
+                    tracking_num = trk_match.group(0).upper() if trk_match else None
+                    session_id = f"session-{int(time.time())}"
+
+                    resp = SwarmResolutionResponse(
+                        user_query=query,
+                        final_answer=swarm_res.synthesized_answer,
+                        a2a_trace=a2a_trace,
+                        is_shipped=is_shipped,
+                        tracking_number=tracking_num,
+                        session_id=session_id,
+                        trace_id=trace_id_str
+                    )
 
                     # Evaluate execution trajectory
                     evaluator = SwarmTrajectoryEvaluator()
@@ -215,19 +251,29 @@ async def stream_query(query: str, request: Request):
                     )
 
                     # Persist session memory to Cosmos DB
-                    order_id = resp.a2a_trace[0]["response"].get("order_id") if resp.a2a_trace else None
-                    hu_id = resp.a2a_trace[1]["response"].get("handling_unit_id") if len(resp.a2a_trace) > 1 else None
-                    await mem_manager.persist_session_memory(
-                        session_id=resp.session_id,
-                        user_query=resp.user_query,
-                        order_id=order_id,
-                        customer_name="Acme Corp",
-                        handling_unit_id=hu_id,
-                        tracking_number=resp.tracking_number,
-                        is_shipped=resp.is_shipped,
-                        final_answer=resp.final_answer,
-                        trace_id=resp.trace_id or trace_id_str
-                    )
+                    order_id = None
+                    hu_id = None
+                    for s in swarm_res.execution_steps:
+                        for r in s.records_returned:
+                            if "Order_ID" in r and not order_id:
+                                order_id = r["Order_ID"]
+                            if ("handling_unit_id" in r or "hu_id" in r) and not hu_id:
+                                hu_id = r.get("handling_unit_id") or r.get("hu_id")
+
+                    try:
+                        await mem_manager.persist_session_memory(
+                            session_id=session_id,
+                            user_query=query,
+                            order_id=order_id,
+                            customer_name="Acme Corp" if "acme" in query.lower() else None,
+                            handling_unit_id=hu_id,
+                            tracking_number=tracking_num,
+                            is_shipped=is_shipped,
+                            final_answer=swarm_res.synthesized_answer,
+                            trace_id=trace_id_str
+                        )
+                    except Exception as mem_err:
+                        logging.warning(f"Cosmos memory persistence skipped: {mem_err}")
 
                     # Emit completed event
                     await AgentEventStreamer.emit(
@@ -235,11 +281,11 @@ async def stream_query(query: str, request: Request):
                         "System",
                         "Swarm workflow execution and multi-domain synthesis completed.",
                         {
-                            "session_id": resp.session_id,
-                            "trace_id": resp.trace_id or trace_id_str,
-                            "is_shipped": resp.is_shipped,
-                            "tracking_number": resp.tracking_number,
-                            "final_answer": resp.final_answer,
+                            "session_id": session_id,
+                            "trace_id": trace_id_str,
+                            "is_shipped": is_shipped,
+                            "tracking_number": tracking_num,
+                            "final_answer": swarm_res.synthesized_answer,
                             "scorecard": scorecard.model_dump()
                         }
                     )
