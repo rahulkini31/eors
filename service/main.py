@@ -391,10 +391,16 @@ async def receive_dapr_event(request: Request):
     if not query:
         return {"status": "DROP"}
 
-    resp = await bus_manager.send_user_query(query)
+    orchestrator = MultiAgentOrchestrator()
+    swarm_res = await orchestrator.solve_query(query)
+    ans_lower = swarm_res.synthesized_answer.lower()
+    is_shipped = ("yes" in ans_lower and "shipped" in ans_lower) or ("in_transit" in ans_lower)
+    import re
+    trk_match = re.search(r"trk-[a-z0-9-]+", ans_lower)
+    tracking_num = trk_match.group(0).upper() if trk_match else None
     return {
         "status": "SUCCESS",
-        "session_id": resp.session_id,
-        "is_shipped": resp.is_shipped,
-        "tracking_number": resp.tracking_number
+        "session_id": str(int(time.time())),
+        "is_shipped": is_shipped,
+        "tracking_number": tracking_num
     }

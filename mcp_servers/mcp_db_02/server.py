@@ -10,7 +10,7 @@ from starlette.responses import JSONResponse
 
 # Ensure mcp_servers root is on python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from common.db import execute_read, get_database_tables, get_database_schema
+from common.db import execute_read, get_database_schema
 from common.validator import TableQueryInput, ReadQueryInput
 
 # Database is strictly bound to db-02-dev
@@ -28,15 +28,6 @@ async def health(request):
         "server": SERVER_NAME,
         "database": DATABASE_NAME
     })
-
-
-@mcp.tool(name="list_tables_db_02", description="Lists all authorized user tables in db-02-dev. Accepts no database parameter.")
-def list_tables_db_02() -> Dict[str, Any]:
-    """Lists available tables in the database."""
-    try:
-        return get_database_tables(DATABASE_NAME)
-    except Exception as e:
-        return {"status": "error", "error": str(e) or repr(e)}
 
 
 @mcp.tool(name="get_schema_db_02", description="Returns column schemas for tables in db-02-dev. Optionally filter by table_name.")

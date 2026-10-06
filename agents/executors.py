@@ -46,7 +46,6 @@ class BaseExecutorAgent:
         """Returns the strictly allowed tool names for this domain."""
         suffix = {"ERP": "db_01", "WMS": "db_02", "TMS": "db_03"}[self.domain]
         return [
-            f"list_tables_{suffix}",
             f"get_schema_{suffix}",
             f"execute_read_query_{suffix}"
         ]
@@ -393,7 +392,7 @@ DOMAIN RESPONSIBILITY:
   * `tbl_OrderLineItems` (Line_ID, Order_ID, Item_SKU, Quantity, Unit_Price, Extended_Price, Line_Status)
 
 STRICT CONSTRAINTS:
-- You are ONLY permitted to call tools for db-01: 'list_tables_db_01', 'get_schema_db_01', 'execute_read_query_db_01'.
+- You are ONLY permitted to call tools for db-01: 'get_schema_db_01', 'execute_read_query_db_01'.
 - You have ZERO access to physical warehouse bins or carrier waybills.
 - Always output clean read-only SQL queries.
 """
@@ -433,7 +432,7 @@ STATUS CODES:
   9: Cancelled
 
 STRICT CONSTRAINTS:
-- You are ONLY permitted to call tools for db-02: 'list_tables_db_02', 'get_schema_db_02', 'execute_read_query_db_02'.
+- You are ONLY permitted to call tools for db-02: 'get_schema_db_02', 'execute_read_query_db_02'.
 - You have ZERO access to financial prices or carrier waybills.
 - Always output clean read-only SQL queries.
 """
@@ -464,7 +463,7 @@ DOMAIN RESPONSIBILITY:
   * `Carrier_Manifests` (Manifest_ID, BOL_Number, Carrier_ID, Handling_Unit_Ref, Tracking_Number, Waybill_Number, Carrier_Name, Pallet_Count, Gross_Weight_LBS, Physical_Dimensions, Shipment_Status, Dispatched_At, Estimated_Delivery)
 
 STRICT CONSTRAINTS:
-- You are ONLY permitted to call tools for db-03: 'list_tables_db_03', 'get_schema_db_03', 'execute_read_query_db_03'.
+- You are ONLY permitted to call tools for db-03: 'get_schema_db_03', 'execute_read_query_db_03'.
 - You have ZERO access to sales order financials or warehouse bin coordinates.
 - Always output clean read-only SQL queries.
 """

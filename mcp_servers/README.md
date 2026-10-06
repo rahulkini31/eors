@@ -32,16 +32,13 @@ Three dedicated Model Context Protocol (MCP) servers deployed as independent Azu
 ## Exposed Tools per Server
 
 ### `mcp_db_01`
-- `list_tables_db_01()`: Lists authorized user tables in `db-01-dev`.
 - `get_schema_db_01(table_name?: str)`: Returns column schema information in `db-01-dev`.
 - `execute_read_query_db_01(query: str, max_rows: int = 100)`: Executes validated read-only SQL queries in `db-01-dev`.
 
 ### `mcp_db_02`
-- `list_tables_db_02()`
-- `get_schema_db_02(table_name?: str)`
-- `execute_read_query_db_02(query: str, max_rows: int = 100)`
+- `get_schema_db_02(table_name?: str)`: Returns column schema information in `db-02-dev`.
+- `execute_read_query_db_02(query: str, max_rows: int = 100)`: Executes validated read-only SQL queries in `db-02-dev`.
 
 ### `mcp_db_03`
-- `list_tables_db_03()`
-- `get_schema_db_03(table_name?: str)`
-- `execute_read_query_db_03(query: str, max_rows: int = 100)`
+- `get_schema_db_03(table_name?: str)`: Returns column schema information in `db-03-dev`.
+- `execute_read_query_db_03(query: str, max_rows: int = 100)`: Executes validated read-only SQL queries in `db-03-dev`.

@@ -95,18 +95,6 @@ def execute_read(database_name: str, query: str, max_rows: int = 100) -> Dict[st
         conn.close()
 
 
-def get_database_tables(database_name: str) -> Dict[str, Any]:
-    """Returns list of tables in the database."""
-    query = """
-        SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
-        FROM INFORMATION_SCHEMA.TABLES
-        WHERE TABLE_TYPE = 'BASE TABLE'
-          AND TABLE_SCHEMA NOT IN ('sys', 'information_schema')
-        ORDER BY TABLE_SCHEMA, TABLE_NAME
-    """
-    return execute_read(database_name, query, max_rows=500)
-
-
 def get_database_schema(database_name: str, table_name: Optional[str] = None) -> Dict[str, Any]:
     """Returns schema columns of tables in the database."""
     if table_name:
