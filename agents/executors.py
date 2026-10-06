@@ -109,6 +109,7 @@ INSTRUCTIONS FOR SQL FORMULATION:
 8. Output JSON matching:
 {{
   "thought_process": "Explanation of query rationale, tables chosen, and filter conditions",
+  "query_description": "1 clear sentence in natural language describing what records are being searched and why",
   "tool_to_call": "execute_read_query_db_XX",
   "sql_query": "SELECT ...",
   "max_rows": 100
@@ -131,25 +132,34 @@ INSTRUCTIONS FOR SQL FORMULATION:
             tool_name = parsed.get("tool_to_call")
             sql = parsed.get("sql_query")
             max_rows = parsed.get("max_rows", 100)
+            query_desc = parsed.get("query_description") or f"Querying {self.domain} database for task: {task_instruction}"
 
             # Fallback tool name if omitted or shortened
             suffix = {"ERP": "db_01", "WMS": "db_02", "TMS": "db_03"}[self.domain]
             if not tool_name or tool_name not in self._get_allowed_tool_names():
                 tool_name = f"execute_read_query_{suffix}"
 
-            # Emit real-time tool execution event
+            # Emit real-time query event in natural language (no bare SQL displayed to user)
             db_tag = {"ERP": "db-01-dev", "WMS": "db-02-dev", "TMS": "db-03-dev"}.get(self.domain, "db")
             try:
                 from agents.event_streamer import AgentEventStreamer
                 await AgentEventStreamer.emit(
-                    "tool_call",
+                    "database_query",
                     f"{self.domain}_Agent",
-                    f"Executing dynamic read query on {db_tag} via {tool_name}",
-                    {"tool": tool_name, "sql": sql},
+                    query_desc,
+                    {
+                        "query_description": query_desc,
+                        "database": db_tag,
+                        "tool": tool_name,
+                        "sql": sql
+                    },
                     database=db_tag
                 )
             except Exception:
                 pass
+
+            # Smooth async cadence
+            await asyncio.sleep(0.35)
 
             # Execute via strictly isolated MCP tool
             try:
@@ -164,17 +174,29 @@ INSTRUCTIONS FOR SQL FORMULATION:
 
             rows = exec_res.get("rows", []) if isinstance(exec_res, dict) else []
 
+            # Format result in clear natural language
+            findings_summary = self._format_natural_language_findings(rows, task_instruction)
+
             try:
                 from agents.event_streamer import AgentEventStreamer
                 await AgentEventStreamer.emit(
-                    "tool_result",
+                    "domain_findings",
                     f"{self.domain}_Agent",
-                    f"Retrieved {len(rows)} record(s) from {self.domain} domain.",
-                    {"rows": rows, "count": len(rows), "matched": len(rows) > 0},
+                    findings_summary,
+                    {
+                        "natural_language_summary": findings_summary,
+                        "count": len(rows),
+                        "matched": len(rows) > 0,
+                        "database": db_tag,
+                        "rows": rows
+                    },
                     database=db_tag
                 )
             except Exception:
                 pass
+
+            # Smooth async cadence before handing off to next stage
+            await asyncio.sleep(0.35)
 
             return {
                 "status": "success",
@@ -182,8 +204,10 @@ INSTRUCTIONS FOR SQL FORMULATION:
                 "agent": self.__class__.__name__,
                 "model": self.model_id,
                 "thought_process": parsed.get("thought_process"),
+                "query_description": query_desc,
                 "sql_query": sql,
-                "query_result": exec_res
+                "query_result": exec_res,
+                "natural_language_summary": findings_summary
             }
         except Exception as e:
             return {
@@ -193,6 +217,129 @@ INSTRUCTIONS FOR SQL FORMULATION:
                 "error": str(e),
                 "raw_llm_response": content
             }
+
+    def _format_natural_language_findings(self, rows: List[Dict[str, Any]], task_instruction: str) -> str:
+        """Translates raw query records into clear, human-understandable natural language findings."""
+        if not rows:
+            return f"No records found in {self.domain} database matching the search criteria."
+
+        row_count = len(rows)
+        if self.domain == "ERP":
+            summaries = []
+            for r in rows[:6]:
+                parts = []
+                if "Order_ID" in r:
+                    parts.append(f"Sales Order **{r['Order_ID']}**")
+                if "Cust_Name" in r:
+                    parts.append(f"for **{r['Cust_Name']}**")
+                if "PO_Number" in r and r.get("PO_Number"):
+                    parts.append(f"(PO: `{r['PO_Number']}`)")
+                if "OrderStatus" in r:
+                    parts.append(f"— Commercial Status: **{r['OrderStatus']}**")
+                if "Total_Amount" in r:
+                    curr = r.get("Currency_Code", "USD")
+                    parts.append(f"— Total: **${r['Total_Amount']} {curr}**")
+                if "Payment_Status" in r:
+                    parts.append(f"({r['Payment_Status']})")
+                if "Credit_Limit_USD" in r and "Cust_Name" in r:
+                    tier = r.get("Account_Type", "Standard")
+                    parts.append(f"— Tier: **{tier}**, Credit Limit: **${r['Credit_Limit_USD']}**")
+                if "Item_Description" in r:
+                    parts.append(f"Product: **{r['Item_Description']}** (SKU: `{r.get('SKU', 'N/A')}`), Qty on Hand: **{r.get('Qty_On_Hand', 'N/A')}**")
+                if "Internal_Notes" in r and r.get("Internal_Notes"):
+                    parts.append(f"Note: *{r['Internal_Notes']}*")
+                if "Shipping_Address" in r and r.get("Shipping_Address"):
+                    parts.append(f"— Destination: {r['Shipping_Address']}")
+
+                if parts:
+                    summaries.append(" ".join(parts))
+                else:
+                    summaries.append(", ".join(f"{k.replace('_', ' ')}: {v}" for k, v in r.items() if v is not None))
+            header = f"Found {row_count} commercial order record{'s' if row_count > 1 else ''}:"
+            return f"{header}\n" + "\n".join(f"• {s}" for s in summaries)
+
+        elif self.domain == "WMS":
+            summaries = []
+            status_map = {
+                1: "Allocated",
+                2: "Picked onto cart",
+                3: "Quality Inspected",
+                4: "Staged at Dock Door",
+                5: "Loaded onto Outbound Transport"
+            }
+            for r in rows[:6]:
+                parts = []
+                status_str = None
+                if "status_id" in r and r["status_id"] is not None:
+                    try:
+                        s_int = int(r["status_id"])
+                        status_str = f"Status {s_int} ({status_map.get(s_int, 'In Progress')})"
+                    except (ValueError, TypeError):
+                        status_str = f"Status {r['status_id']}"
+
+                if "pick_id" in r:
+                    qty = r.get("qty_picked") or r.get("qty_requested") or ""
+                    sku = r.get("sku_code") or ""
+                    parts.append(f"Pick **{r['pick_id']}**" + (f" for {qty} unit(s)" if qty else "") + (f" of `{sku}`" if sku else ""))
+                if status_str:
+                    parts.append(f"— Physical Status: **{status_str}**")
+                if "handling_unit_id" in r and r.get("handling_unit_id"):
+                    parts.append(f"on Pallet **{r['handling_unit_id']}**")
+                if "staged_dock_code" in r and r.get("staged_dock_code"):
+                    parts.append(f"at **{r['staged_dock_code']}**")
+                if "dock_loaded_at" in r:
+                    if r["dock_loaded_at"]:
+                        parts.append(f"— Loaded onto truck at `{r['dock_loaded_at']}`")
+                    else:
+                        parts.append("— **Not loaded onto truck** (dock_loaded_at is null)")
+                if "dock_code" in r:
+                    parts.append(f"Dock Door **{r['dock_code']}** (Status: **{r.get('door_status', 'N/A')}**, Carrier: **{r.get('assigned_carrier', 'N/A')}**, Trailer Loaded: **{r.get('trailer_loaded', 'N/A')}**)")
+                if "hu_id" in r:
+                    parts.append(f"Handling Unit **{r['hu_id']}** (LPN: `{r.get('lpn_barcode', 'N/A')}`, Staged: **{r.get('staged_dock_code', 'N/A')}**)")
+
+                if parts:
+                    summaries.append(" ".join(parts))
+                else:
+                    summaries.append(", ".join(f"{k.replace('_', ' ')}: {v}" for k, v in r.items() if v is not None))
+            header = f"Found {row_count} warehouse fulfillment record{'s' if row_count > 1 else ''}:"
+            return f"{header}\n" + "\n".join(f"• {s}" for s in summaries)
+
+        elif self.domain == "TMS":
+            summaries = []
+            for r in rows[:6]:
+                parts = []
+                if "BOL_Number" in r or "Manifest_ID" in r:
+                    ids = []
+                    if r.get("BOL_Number"): ids.append(f"BOL `{r['BOL_Number']}`")
+                    if r.get("Manifest_ID"): ids.append(f"Manifest `{r['Manifest_ID']}`")
+                    parts.append(f"Shipment (" + ", ".join(ids) + ")")
+                if "Carrier_Name" in r and r.get("Carrier_Name"):
+                    parts.append(f"via **{r['Carrier_Name']}**")
+                if "Tracking_Number" in r and r.get("Tracking_Number"):
+                    parts.append(f"(Tracking: **{r['Tracking_Number']}**)")
+                if "Load_Status" in r and r.get("Load_Status"):
+                    parts.append(f"— Load Status: **{r['Load_Status']}**")
+                if "Shipment_Status" in r and r.get("Shipment_Status"):
+                    parts.append(f"— Transit Status: **{r['Shipment_Status']}**")
+                if "Trailer_Number" in r and r.get("Trailer_Number"):
+                    parts.append(f"— Trailer: `{r['Trailer_Number']}`")
+                if "Dispatched_At" in r or "Departure_Timestamp" in r:
+                    depart = r.get("Dispatched_At") or r.get("Departure_Timestamp")
+                    if depart:
+                        parts.append(f"— Departed: `{depart}` (**In Transit**)")
+                    else:
+                        parts.append("— **Awaiting dispatch / Not departed**")
+                if "Load_ID" in r and not ("BOL_Number" in r or "Manifest_ID" in r):
+                    parts.append(f"Freight Load **{r['Load_ID']}** (Trailer: `{r.get('Trailer_Number', 'N/A')}`, Status: **{r.get('Load_Status', 'N/A')}**)")
+
+                if parts:
+                    summaries.append(" ".join(parts))
+                else:
+                    summaries.append(", ".join(f"{k.replace('_', ' ')}: {v}" for k, v in r.items() if v is not None))
+            header = f"Found {row_count} logistics freight record{'s' if row_count > 1 else ''}:"
+            return f"{header}\n" + "\n".join(f"• {s}" for s in summaries)
+
+        return f"Retrieved {row_count} record(s) matching criteria."
 
 
 # ============================================================================

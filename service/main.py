@@ -179,11 +179,12 @@ async def stream_query(query: str, request: Request):
 
                 try:
                     await AgentEventStreamer.emit(
-                        "pipeline_start",
+                        "swarm_initialized",
                         "System",
-                        f"Initializing distributed MAF swarm for query: '{query}'",
+                        f"Initializing multi-agent investigation across enterprise databases for query: '{query}'",
                         {"trace_id": trace_id_str, "user_query": query}
                     )
+                    await asyncio.sleep(0.35)
 
                     # Execute query via dynamic MultiAgentOrchestrator
                     orchestrator = MultiAgentOrchestrator()
@@ -228,11 +229,12 @@ async def stream_query(query: str, request: Request):
                     scorecard = evaluator.evaluate_trajectory(resp)
 
                     await AgentEventStreamer.emit(
-                        "eval_scorecard",
+                        "verification_audit",
                         "Evaluator",
-                        f"Trajectory Scorecard: {scorecard.verdict} ({int(scorecard.overall_score * 100)}%)",
+                        f"Trajectory Audit: {scorecard.verdict} ({int(scorecard.overall_score * 100)}% Compliance across all execution spans)",
                         scorecard.model_dump()
                     )
+                    await asyncio.sleep(0.35)
 
                     # Persist session memory to Cosmos DB
                     order_id = None
@@ -261,9 +263,9 @@ async def stream_query(query: str, request: Request):
 
                     # Emit completed event
                     await AgentEventStreamer.emit(
-                        "completed",
+                        "investigation_complete",
                         "System",
-                        "Swarm workflow execution and multi-domain synthesis completed.",
+                        "Multi-agent investigation completed successfully.",
                         {
                             "session_id": session_id,
                             "trace_id": trace_id_str,

@@ -12,6 +12,10 @@ from agents.config import MCP_SERVERS
 class MCPDiscoveryClient:
     """Client for discovering tools, schemas, and executing queries on decoupled MCP servers."""
 
+    _cached_tools: Dict[str, List[Dict[str, Any]]] = {}
+    _cached_schemas: Dict[str, Dict[str, Any]] = {}
+    _cached_architectures: Optional[Dict[str, Any]] = None
+
     def __init__(self, servers: Optional[Dict[str, Dict[str, str]]] = None):
         self.servers = servers or MCP_SERVERS
 
@@ -20,7 +24,7 @@ class MCPDiscoveryClient:
         server_info = self.servers[domain]
         health_url = f"{server_info['base_url'].rstrip('/')}{server_info['health_endpoint']}"
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.get(health_url)
                 if resp.status_code == 200:
                     return {"domain": domain, "status": "online", "details": resp.json()}
@@ -29,14 +33,23 @@ class MCPDiscoveryClient:
             return {"domain": domain, "status": "unreachable", "error": str(e)}
 
     async def ping_all_servers(self) -> Dict[str, Any]:
-        """Pings all three MCP servers."""
-        results = {}
-        for domain in self.servers:
-            results[domain] = await self.ping_server(domain)
-        return results
+        """Pings all three MCP servers in parallel."""
+        domains = list(self.servers.keys())
+        tasks = [self.ping_server(d) for d in domains]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        out = {}
+        for d, res in zip(domains, results):
+            if isinstance(res, Exception):
+                out[d] = {"domain": d, "status": "error", "error": str(res)}
+            else:
+                out[d] = res
+        return out
 
-    async def list_tools_for_server(self, domain: str, max_retries: int = 4) -> List[Dict[str, Any]]:
+    async def list_tools_for_server(self, domain: str, max_retries: int = 4, force_refresh: bool = False) -> List[Dict[str, Any]]:
         """Connects via SSE and returns the list of exposed tools for a specific domain server."""
+        if not force_refresh and domain in MCPDiscoveryClient._cached_tools:
+            return MCPDiscoveryClient._cached_tools[domain]
+
         server_info = self.servers[domain]
         sse_url = f"{server_info['base_url'].rstrip('/')}{server_info['sse_endpoint']}"
         last_error = None
@@ -46,7 +59,7 @@ class MCPDiscoveryClient:
                     async with ClientSession(read_stream, write_stream) as session:
                         await session.initialize()
                         tools_response = await session.list_tools()
-                        return [
+                        tools = [
                             {
                                 "name": tool.name,
                                 "description": tool.description or "",
@@ -54,6 +67,8 @@ class MCPDiscoveryClient:
                             }
                             for tool in tools_response.tools
                         ]
+                        MCPDiscoveryClient._cached_tools[domain] = tools
+                        return tools
             except Exception as e:
                 last_error = e
                 if attempt < max_retries - 1:
@@ -94,8 +109,11 @@ class MCPDiscoveryClient:
                     await asyncio.sleep(2 ** attempt + 1)
         raise RuntimeError(f"Failed to execute {tool_name} on {domain} after {max_retries} attempts: {last_error}") from last_error
 
-    async def get_schema_for_server(self, domain: str, table_name: Optional[str] = None) -> Dict[str, Any]:
+    async def get_schema_for_server(self, domain: str, table_name: Optional[str] = None, force_refresh: bool = False) -> Dict[str, Any]:
         """Calls get_schema_db_XX on the target domain server to dynamically inspect table structures."""
+        if not table_name and not force_refresh and domain in MCPDiscoveryClient._cached_schemas:
+            return MCPDiscoveryClient._cached_schemas[domain]
+
         tool_map = {
             "ERP": "get_schema_db_01",
             "WMS": "get_schema_db_02",
@@ -103,21 +121,32 @@ class MCPDiscoveryClient:
         }
         tool_name = tool_map[domain]
         args = {"table_name": table_name} if table_name else {}
-        return await self.execute_tool(domain, tool_name, args)
+        schema = await self.execute_tool(domain, tool_name, args)
+        if not table_name:
+            MCPDiscoveryClient._cached_schemas[domain] = schema
+        return schema
 
-    async def discover_all_architectures(self) -> Dict[str, Any]:
-        """Dynamically reads the architecture of ERP, WMS, and TMS without prior hardcoding."""
-        architectures = {}
-        for domain in self.servers:
-            ping_res = await self.ping_server(domain)
-            tools = await self.list_tools_for_server(domain)
-            schema = await self.get_schema_for_server(domain)
-            architectures[domain] = {
-                "server_name": self.servers[domain]["name"],
-                "domain_description": self.servers[domain]["domain"],
-                "status": ping_res.get("status"),
-                "available_tools": [t["name"] for t in tools],
-                "tool_definitions": tools,
-                "database_schema": schema
-            }
+    async def _discover_single_domain(self, domain: str) -> tuple:
+        """Discovers tools and schema for a single domain server."""
+        ping_res = await self.ping_server(domain)
+        tools = await self.list_tools_for_server(domain)
+        schema = await self.get_schema_for_server(domain)
+        return domain, {
+            "server_name": self.servers[domain]["name"],
+            "domain_description": self.servers[domain]["domain"],
+            "status": ping_res.get("status"),
+            "available_tools": [t["name"] for t in tools],
+            "tool_definitions": tools,
+            "database_schema": schema
+        }
+
+    async def discover_all_architectures(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """Dynamically reads the architecture of ERP, WMS, and TMS in parallel without prior hardcoding."""
+        if not force_refresh and MCPDiscoveryClient._cached_architectures:
+            return MCPDiscoveryClient._cached_architectures
+
+        tasks = [self._discover_single_domain(d) for d in self.servers]
+        results = await asyncio.gather(*tasks)
+        architectures = dict(results)
+        MCPDiscoveryClient._cached_architectures = architectures
         return architectures

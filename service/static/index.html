@@ -488,19 +488,49 @@
       }
     }
 
+    // Friendly Stage Name Translation (No backend variables)
+    function formatStageName(type) {
+      const stageMap = {
+        'swarm_initialized': 'Swarm Initialized',
+        'pipeline_start': 'Swarm Initialized',
+        'schema_inspection': 'Schema Inspection',
+        'discovery_start': 'Schema Inspection',
+        'schema_inspection_complete': 'Schema Discovery Complete',
+        'discovery_done': 'Schema Discovery Complete',
+        'orchestration_plan': 'Strategic Plan Ready',
+        'agent_dispatch': 'Strategic Plan Ready',
+        'agent_activated': 'Agent Activated',
+        'agent_start': 'Agent Activated',
+        'database_query': 'Querying Database',
+        'tool_call': 'Querying Database',
+        'domain_findings': 'Query Results',
+        'tool_result': 'Query Results',
+        'evidence_synthesis_start': 'Synthesizing Findings',
+        'evidence_synthesized': 'Evidence Verified',
+        'synthesis_done': 'Evidence Verified',
+        'verification_audit': 'Audit Scorecard',
+        'eval_scorecard': 'Audit Scorecard',
+        'investigation_complete': 'Investigation Complete',
+        'completed': 'Investigation Complete',
+        'error': 'Execution Error'
+      };
+      return stageMap[type] || type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+
     // Process Individual Real-Time Stream Event
     function handleStreamEvent(event, aiMsgId) {
       const feed = document.getElementById('stream-events-feed');
 
       // Update Top Actor Badges based on event
       if (event.agent === 'GeminiPlanner') {
-        setActorRibbonState('planner', event.type === 'synthesis_done' ? 'done' : 'active');
+        const isDone = ['evidence_synthesized', 'synthesis_done', 'investigation_complete', 'completed'].includes(event.type);
+        setActorRibbonState('planner', isDone ? 'done' : 'active');
       } else if (event.agent === 'ERP_Agent') {
-        setActorRibbonState('erp', event.type === 'tool_result' ? 'done' : 'active');
+        setActorRibbonState('erp', ['domain_findings', 'tool_result'].includes(event.type) ? 'done' : 'active');
       } else if (event.agent === 'WMS_Agent') {
-        setActorRibbonState('wms', event.type === 'tool_result' ? 'done' : 'active');
+        setActorRibbonState('wms', ['domain_findings', 'tool_result'].includes(event.type) ? 'done' : 'active');
       } else if (event.agent === 'TMS_Agent') {
-        setActorRibbonState('tms', event.type === 'tool_result' ? 'done' : 'active');
+        setActorRibbonState('tms', ['domain_findings', 'tool_result'].includes(event.type) ? 'done' : 'active');
       }
 
       // Record Trace ID if received
@@ -524,24 +554,47 @@
 
       let headerExtra = event.database ? `<span class="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">${event.database}</span>` : '';
 
-      let bodyHtml = `<p class="text-slate-200 mt-1">${escapeHtml(event.message)}</p>`;
+      let bodyHtml = `<p class="text-slate-200 mt-1 font-medium leading-relaxed">${escapeHtml(event.message)}</p>`;
 
-      // If event contains SQL query, format it nicely
-      if (event.data && event.data.sql) {
+      // Natural language search objective (do NOT show bare SQL)
+      if (event.data && event.data.query_description && event.data.query_description !== event.message) {
         bodyHtml += `
-          <div class="mt-2 bg-slate-950 p-2.5 rounded border border-slate-800/80 overflow-x-auto text-[11px] text-sky-300">
-            <span class="text-slate-400 text-[10px] block uppercase font-bold mb-1">Generated SQL Tool Query:</span>
-            <code>${escapeHtml(event.data.sql)}</code>
+          <div class="mt-2 bg-slate-950/80 p-2.5 rounded-lg border border-sky-900/40 text-[11px] text-sky-200">
+            <span class="text-sky-400 text-[10px] block uppercase font-bold tracking-wider mb-0.5">Search Objective:</span>
+            <span>${escapeHtml(event.data.query_description)}</span>
           </div>
         `;
       }
 
-      // If event contains structured output result
-      if (event.type === 'tool_result' && event.data) {
+      // Natural language query findings (do NOT dump raw JSON)
+      if ((event.type === 'domain_findings' || event.type === 'tool_result') && event.data) {
+        const summary = event.data.natural_language_summary || event.data.summary || (typeof event.data === 'string' ? event.data : null);
+        const count = event.data.count !== undefined ? event.data.count : (event.data.rows ? event.data.rows.length : null);
+        const countBadge = count !== null ? `<span class="text-slate-400 font-mono text-[10px]">(${count} record${count === 1 ? '' : 's'} found)</span>` : '';
+
+        if (summary) {
+          bodyHtml += `
+            <div class="mt-2 bg-emerald-950/20 p-3 rounded-lg border border-emerald-500/30 text-xs text-slate-100 leading-relaxed space-y-1.5">
+              <div class="flex items-center justify-between text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                <span>✓ Database Findings</span>
+                ${countBadge}
+              </div>
+              <div class="prose prose-invert text-xs leading-relaxed max-w-none text-slate-200 whitespace-pre-line">
+                ${formatMarkdownAnswer(summary)}
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Synthesis card
+      if ((event.type === 'evidence_synthesized' || event.type === 'synthesis_done') && event.data && event.data.final_answer) {
         bodyHtml += `
-          <div class="mt-2 bg-slate-950/90 p-2.5 rounded border border-emerald-900/40 text-[11px] text-emerald-300 space-y-1">
-            <span class="text-slate-400 text-[10px] block uppercase font-bold">Returned Entity Records:</span>
-            <pre class="overflow-x-auto text-[10.5px]">${escapeHtml(JSON.stringify(event.data, null, 2))}</pre>
+          <div class="mt-2 bg-purple-950/20 p-3 rounded-lg border border-purple-500/30 text-xs text-slate-100 leading-relaxed">
+            <div class="text-[10px] font-bold text-purple-400 uppercase tracking-wider mb-1">✓ Grounded Synthesis</div>
+            <div class="prose prose-invert text-xs leading-relaxed max-w-none text-slate-200">
+              ${formatMarkdownAnswer(event.data.final_answer)}
+            </div>
           </div>
         `;
       }
@@ -550,7 +603,7 @@
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${agentColor}">${event.agent}</span>
-            <span class="text-[10px] text-slate-400 uppercase font-semibold">${event.type}</span>
+            <span class="text-[10px] text-slate-300 font-semibold">${formatStageName(event.type)}</span>
             ${headerExtra}
           </div>
           <span class="text-[10px] text-slate-400 font-mono">${new Date().toLocaleTimeString()}</span>
@@ -562,7 +615,7 @@
       feed.scrollTop = feed.scrollHeight;
 
       // Handle Completion
-      if (event.type === 'completed' && event.data) {
+      if ((event.type === 'investigation_complete' || event.type === 'completed') && event.data) {
         const aiMsgElem = document.getElementById(aiMsgId);
         if (aiMsgElem) {
           aiMsgElem.innerHTML = `

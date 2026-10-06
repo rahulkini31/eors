@@ -78,6 +78,8 @@ class PlannerAgent:
 
     async def discover_architectures(self) -> Dict[str, Any]:
         """Dynamically learns the architectures and tools of the 3 MCP servers."""
+        if self.cached_architecture:
+            return self.cached_architecture
         self.cached_architecture = await self.discovery_client.discover_all_architectures()
         return self.cached_architecture
 

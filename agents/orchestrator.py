@@ -96,9 +96,9 @@ class MultiAgentOrchestrator:
             try:
                 from agents.event_streamer import AgentEventStreamer
                 await AgentEventStreamer.emit(
-                    "discovery_start",
+                    "schema_inspection",
                     "GeminiPlanner",
-                    "Pinging MCP servers to dynamically read ERP, WMS, and TMS schemas without hardcoding..."
+                    "Inspecting database schemas and operational capabilities across Commercial ERP, Warehouse WMS, and Freight TMS..."
                 )
             except Exception:
                 pass
@@ -117,13 +117,14 @@ class MultiAgentOrchestrator:
             try:
                 from agents.event_streamer import AgentEventStreamer
                 await AgentEventStreamer.emit(
-                    "discovery_done",
+                    "schema_inspection_complete",
                     "GeminiPlanner",
-                    f"Dynamic discovery complete: introspected {len(architectures)} decoupled domain architectures.",
+                    f"Schema discovery completed: Successfully introspected {len(architectures)} enterprise database architectures.",
                     {"domains": list(architectures.keys())}
                 )
             except Exception:
                 pass
+            await asyncio.sleep(0.35)
 
             # Step 1: Planner formulation via Gemini
             print("\n[Swarm Phase 1] Formulating Strategic Multi-Hop Plan via Gemini Planner...")
@@ -133,13 +134,14 @@ class MultiAgentOrchestrator:
                 from agents.event_streamer import AgentEventStreamer
                 phases_count = len(planner_plan.get("plan", {}).get("execution_phases", []))
                 await AgentEventStreamer.emit(
-                    "agent_dispatch",
+                    "orchestration_plan",
                     "GeminiPlanner",
-                    f"Strategic plan formulated: {phases_count} execution phases identified across the ecosystem.",
+                    f"Execution strategy formulated: {phases_count} coordinated phases identified to investigate ground truth.",
                     {"plan": planner_plan}
                 )
             except Exception:
                 pass
+            await asyncio.sleep(0.35)
 
             # Step 2: Execution loop across dynamic swarm phases
             return await self._run_llm_swarm(user_query, planner_plan, architectures, start_time)
@@ -212,13 +214,14 @@ class MultiAgentOrchestrator:
             try:
                 from agents.event_streamer import AgentEventStreamer
                 await AgentEventStreamer.emit(
-                    "agent_start",
+                    "agent_activated",
                     f"{assigned.domain}_Agent",
-                    f"Executing {assigned.domain} sub-task: {action_goal}",
+                    f"Activated {assigned.domain} Agent to investigate: {action_goal}",
                     database=db_tag
                 )
             except Exception:
                 pass
+            await asyncio.sleep(0.35)
 
             step_start = time.time()
             try:
@@ -254,6 +257,17 @@ class MultiAgentOrchestrator:
 
         # Synthesize final answer across domains using Google Gemini
         print("\n[Swarm Phase 3] Synthesizing Cross-Domain Facts via Gemini LLM...")
+        try:
+            from agents.event_streamer import AgentEventStreamer
+            await AgentEventStreamer.emit(
+                "evidence_synthesis_start",
+                "GeminiPlanner",
+                "Cross-referencing evidence across ERP, WMS, and TMS to synthesize verified ground truth..."
+            )
+        except Exception:
+            pass
+        await asyncio.sleep(0.35)
+
         try:
             from google import genai
             from google.genai import types
@@ -306,9 +320,9 @@ Guidelines:
         try:
             from agents.event_streamer import AgentEventStreamer
             await AgentEventStreamer.emit(
-                "synthesis_done",
+                "evidence_synthesized",
                 "GeminiPlanner",
-                "Grounded evidence verified and synthesized across all enterprise systems.",
+                "Evidence synthesis complete: Order lifecycle and fulfillment state verified across all enterprise systems.",
                 {
                     "final_answer": final_answer,
                     "is_shipped": is_shipped,
@@ -317,6 +331,7 @@ Guidelines:
             )
         except Exception:
             pass
+        await asyncio.sleep(0.35)
 
         print(f"\n{'='*70}")
         print("🎯 FINAL SYNTHESIZED ANSWER:")
